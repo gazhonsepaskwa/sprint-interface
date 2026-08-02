@@ -67,7 +67,8 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [enrollSearch, setEnrollSearch] = useState('');
   const [projectSearch, setProjectSearch] = useState('');
-  const [syncing, setSyncing] = useState(false);
+  const [syncingStudents, setSyncingStudents] = useState(false);
+  const [syncingProjects, setSyncingProjects] = useState(false);
 
   const [showSprintModal, setShowSprintModal] = useState(false);
   const [showStudentModal, setShowStudentModal] = useState(false);
@@ -227,9 +228,26 @@ function App() {
     }
   };
 
+  const sync42Projects = async () => {
+    if (!confirm('Sync projects from 42 Cursus? This will fetch standard curriculum projects.')) return;
+    setSyncingProjects(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/projects/sync-42`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
+      alert(data.message);
+      await fetchData();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Failed to sync projects.');
+    } finally {
+      setSyncingProjects(false);
+    }
+  };
+
   const sync42Students = async () => {
     if (!confirm('Sync all students from 42 Belgium? This may take a minute.')) return;
-    setSyncing(true);
+    setSyncingStudents(true);
     try {
       const res = await fetch(`${API_BASE}/api/students/sync-42`, { method: 'POST' });
       const data = await res.json();
@@ -240,7 +258,7 @@ function App() {
       console.error(err);
       alert('Failed to sync: ' + (err as Error).message);
     } finally {
-      setSyncing(false);
+      setSyncingStudents(false);
     }
   };
 
@@ -567,11 +585,11 @@ function App() {
                   <div className="flex gap-2">
                     <button
                       onClick={sync42Students}
-                      disabled={syncing}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all border ${syncing ? 'bg-slate-800 text-slate-500 border-slate-700' : 'bg-blue-600/10 text-blue-400 border-blue-600/30 hover:bg-blue-600/20'}`}
+                      disabled={syncingStudents}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all border ${syncingStudents ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed opacity-50' : 'bg-blue-600/10 text-blue-400 border-blue-600/30 hover:bg-blue-600/20'}`}
                     >
-                      <RefreshCcw size={14} className={syncing ? 'animate-spin' : ''} />
-                      {syncing ? 'SYNCING...' : 'SYNC WITH 42 BELGIUM'}
+                      <RefreshCcw size={14} className={syncingStudents ? 'animate-spin' : ''} />
+                      {syncingStudents ? 'SYNCING...' : 'SYNC WITH 42 BELGIUM'}
                     </button>
                     <button
                       onClick={handleDropAllStudents}
@@ -605,7 +623,25 @@ function App() {
               </section>
               <div className="space-y-8">
                 <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
-                  <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-purple-400">Project Library</h2>
+                  <div className="flex justify-between items-center mb-8">
+                    <div className="flex items-center gap-3">
+                      <Briefcase className="text-purple-400" size={24} />
+                      <h2 className="text-xl font-bold uppercase tracking-widest text-sm text-purple-400">Project Library</h2>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={sync42Projects}
+                        disabled={syncingProjects}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all border ${syncingProjects ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed opacity-50' : 'bg-purple-600/10 text-purple-400 border-purple-600/30 hover:bg-purple-600/20'}`}
+                      >
+                        <RefreshCcw size={14} className={syncingProjects ? 'animate-spin' : ''} />
+                        {syncingProjects ? 'SYNCING...' : 'SYNC WITH 42'}
+                      </button>
+                      <button onClick={() => { setEditingId(null); setProjectForm({name:'', description:''}); setShowProjectModal(true); }} className="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2">
+                        <Plus size={16} /> ADD NEW
+                      </button>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                     {projects
                       .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()))

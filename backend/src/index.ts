@@ -57,10 +57,21 @@ const initDb = async () => {
 
       CREATE TABLE IF NOT EXISTS projects (
         id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
+        name TEXT UNIQUE NOT NULL,
         description TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Migration: Ensure projects.name is UNIQUE
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'projects_name_key'
+        ) THEN
+          ALTER TABLE projects ADD CONSTRAINT projects_name_key UNIQUE (name);
+        END IF;
+      END $$;
 
       CREATE TABLE IF NOT EXISTS completion_levels (
         id SERIAL PRIMARY KEY,
@@ -323,6 +334,65 @@ app.put('/api/students/:id', async (req, res) => {
 });
 
 // Project Routes
+app.post('/api/projects/sync-42', async (req, res) => {
+  const UID = process.env.FORTYTWO_APP_ID;
+  const SECRET = process.env.FORTYTWO_APP_SECRET;
+
+  if (!UID || !SECRET) {
+    return res.status(500).json({ error: '42 API credentials missing in .env' });
+  }
+
+  try {
+    const authRes = await axios.post('https://api.intra.42.fr/oauth/token', {
+      grant_type: 'client_credentials',
+      client_id: UID,
+      client_secret: SECRET
+    });
+    const token = authRes.data.access_token;
+
+    let page = 1;
+    let allProjects: any[] = [];
+    let hasMore = true;
+
+    // Fetch projects from the 42 Cursus (ID 21)
+    while (hasMore) {
+      console.log(`Fetching page ${page} of projects from 42 API...`);
+      const projectsRes = await axios.get(`https://api.intra.42.fr/v2/cursus/21/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          'page[size]': 100,
+          'page[number]': page
+        }
+      });
+
+      const projects = projectsRes.data;
+      if (projects.length === 0) {
+        hasMore = false;
+      } else {
+        allProjects = [...allProjects, ...projects];
+        page++;
+      }
+      if (page > 20) hasMore = false; // Safety break
+    }
+
+    console.log(`Syncing ${allProjects.length} projects to database...`);
+
+    for (const project of allProjects) {
+      await pool.query(`
+        INSERT INTO projects (name, description)
+        VALUES ($1, $2)
+        ON CONFLICT (name)
+        DO NOTHING
+      `, [project.name, project.slug]); // Using slug as description if empty, or intra has more?
+    }
+
+    res.json({ message: `Successfully synced ${allProjects.length} projects.` });
+  } catch (err) {
+    console.error('Project Sync Error:', (err as any).response?.data || (err as Error).message);
+    res.status(500).json({ error: 'Failed to sync projects with 42 API' });
+  }
+});
+
 app.post('/api/projects', async (req, res) => {
   const { name, description } = req.body;
   try {
