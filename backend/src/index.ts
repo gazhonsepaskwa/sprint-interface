@@ -206,15 +206,21 @@ app.get('/api/projects', async (req, res) => {
 app.post('/api/sprints/:sprintId/students', async (req, res) => {
   const sprintId = parseInt(req.params.sprintId);
   const { studentId, projectId } = req.body;
-  console.log(`Enrolling student ${studentId} into sprint ${sprintId} with project ${projectId}`);
+  console.log(`[ENROLL] Sprint: ${sprintId}, Student: ${studentId}, Project: ${projectId}`);
+
+  if (!sprintId || !studentId || !projectId) {
+    return res.status(400).json({ error: 'Missing sprintId, studentId, or projectId' });
+  }
+
   try {
     await pool.query(
       'INSERT INTO sprint_students (sprint_id, student_id, project_id) VALUES ($1, $2, $3) ON CONFLICT (sprint_id, student_id) DO UPDATE SET project_id = EXCLUDED.project_id',
       [sprintId, studentId, projectId]
     );
-    res.status(201).json({ message: 'Student enrolled' });
+    console.log('[ENROLL] Success');
+    res.status(201).json({ message: 'Student enrolled/updated' });
   } catch (err) {
-    console.error('Enrollment error:', err);
+    console.error('[ENROLL] Error:', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });
@@ -258,7 +264,6 @@ app.delete('/api/sprints/:sprintId/students/:studentId', async (req, res) => {
 app.get('/api/sprints/:sprintId/daily', async (req, res) => {
   const sprintId = parseInt(req.params.sprintId);
   const { date } = req.query;
-  console.log(`Fetching daily data for sprint ${sprintId} on date ${date}`);
   try {
     const result = await pool.query(`
       SELECT
@@ -266,6 +271,7 @@ app.get('/api/sprints/:sprintId/daily', async (req, res) => {
         s.name,
         s.login,
         s.image_url,
+        ss.project_id,
         p.name as project_name,
         obj.id as objective_id,
         obj.objective,
@@ -277,10 +283,9 @@ app.get('/api/sprints/:sprintId/daily', async (req, res) => {
       WHERE ss.sprint_id = $1
       ORDER BY s.name ASC
     `, [sprintId, date]);
-    console.log(`Found ${result.rows.length} sprinters`);
     res.json(result.rows);
   } catch (err) {
-    console.error('Daily fetch error:', err);
+    console.error('[DAILY] Error:', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });
