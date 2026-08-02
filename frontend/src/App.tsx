@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Calendar, UserPlus, Users, Briefcase, ChevronRight, Trash2, ChevronLeft, CheckCircle2, Circle, LayoutDashboard, Settings2, UserMinus, Palette } from 'lucide-react'
+import { Plus, Calendar, UserPlus, Users, Briefcase, ChevronRight, Trash2, ChevronLeft, CheckCircle2, Circle, LayoutDashboard, Settings2, UserMinus, Palette, BarChart3 } from 'lucide-react'
 
 interface Sprint {
   id: number;
@@ -42,6 +42,14 @@ interface DailyData {
   completion_color?: string;
 }
 
+interface SprintSummaryStudent {
+  id: number;
+  name: string;
+  login: string;
+  image_url: string;
+  days: { [date: string]: string };
+}
+
 type View = 'dashboard' | 'libraries';
 
 function App() {
@@ -55,6 +63,7 @@ function App() {
   const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
   const [currentDate, setCurrentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [dailyData, setDailyData] = useState<DailyData[]>([]);
+  const [summaryData, setSummaryData] = useState<SprintSummaryStudent[]>([]);
 
   const [showSprintModal, setShowSprintModal] = useState(false);
   const [showStudentModal, setShowStudentModal] = useState(false);
@@ -111,19 +120,33 @@ function App() {
     }
   };
 
+  const fetchSummaryData = async () => {
+    if (!selectedSprint) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/sprints/${selectedSprint.id}/summary`);
+      const data = await res.json();
+      setSummaryData(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, []);
 
   useEffect(() => {
-    if (selectedSprint) {
+    if (selectedSprint && currentView === 'dashboard') {
       const start = formatDate(selectedSprint.start_date);
       const end = formatDate(selectedSprint.end_date);
       if (currentDate < start) setCurrentDate(start);
       else if (currentDate > end) setCurrentDate(end);
-      else fetchDailyData();
+      else {
+        fetchDailyData();
+        fetchSummaryData();
+      }
     }
-  }, [selectedSprint, currentDate]);
+  }, [selectedSprint, currentDate, currentView]);
 
   const handleCreateSprint = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -213,6 +236,7 @@ function App() {
         setEnrollForm({ studentId: 0, projectId: 0 });
       }
       await fetchDailyData();
+      await fetchSummaryData();
     } catch (err) {
       console.error(err);
       alert('Failed to save assignment.');
@@ -224,6 +248,7 @@ function App() {
     try {
       await fetch(`${API_BASE}/api/sprints/${selectedSprint.id}/students/${studentId}`, { method: 'DELETE' });
       await fetchDailyData();
+      await fetchSummaryData();
     } catch (err) {
       console.error(err);
     }
@@ -256,7 +281,8 @@ function App() {
         completionLevelId
       }),
     });
-    fetchDailyData();
+    await fetchDailyData();
+    await fetchSummaryData();
   };
 
   const changeDay = (days: number) => {
@@ -266,6 +292,17 @@ function App() {
     setCurrentDate(formatDate(d));
   };
 
+  const getDatesInRange = (startDate: string, endDate: string) => {
+    const dates = [];
+    let current = new Date(startDate);
+    const last = new Date(endDate);
+    while (current <= last) {
+      dates.push(current.toISOString().split('T')[0]);
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  };
+
   const isFirstDay = selectedSprint && currentDate <= formatDate(selectedSprint.start_date);
   const isLastDay = selectedSprint && currentDate >= formatDate(selectedSprint.end_date);
 
@@ -273,10 +310,14 @@ function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col">
       <nav className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex justify-between items-center sticky top-0 z-30 shadow-lg">
         <div className="flex items-center gap-8">
-          <h1 className="text-2xl font-black bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">SPRINT</h1>
+          <h1 className="text-2xl font-black bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent tracking-tighter">SPRINT INTERFACE</h1>
           <div className="flex gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-            <button onClick={() => setCurrentView('dashboard')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>DASHBOARD</button>
-            <button onClick={() => setCurrentView('libraries')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'libraries' ? 'bg-purple-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>LIBRARIES</button>
+            <button onClick={() => setCurrentView('dashboard')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+              <LayoutDashboard size={16} className="inline mr-2" /> DASHBOARD
+            </button>
+            <button onClick={() => setCurrentView('libraries')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'libraries' ? 'bg-purple-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+              <Settings2 size={16} className="inline mr-2" /> LIBRARIES
+            </button>
           </div>
         </div>
         <div className="flex gap-3">
@@ -293,111 +334,185 @@ function App() {
       </nav>
 
       <main className="flex-1 p-6 overflow-y-auto">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-[1600px] mx-auto">
           {currentView === 'dashboard' ? (
-             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                <div className="lg:col-span-1 space-y-2">
+             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* Sprint Sidebar (2 cols) */}
+                <div className="lg:col-span-2 space-y-2">
+                  <div className="flex items-center gap-2 mb-4 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                    <Calendar size={14} />
+                    <span>Select Sprint</span>
+                  </div>
                   {sprints.map(sprint => (
-                    <button key={sprint.id} onClick={() => setSelectedSprint(sprint)} className={`w-full text-left p-4 rounded-xl border transition-all group relative ${selectedSprint?.id === sprint.id ? 'bg-blue-600/10 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'}`}>
-                      <div className="font-bold truncate pr-6">{sprint.name || `Sprint #${sprint.id}`}</div>
-                      <div className="text-[10px] opacity-60 mt-1">{formatDate(sprint.start_date)} / {formatDate(sprint.end_date)}</div>
-                      <button onClick={(e) => handleDeleteSprint(e, sprint.id)} className="absolute top-4 right-4 text-slate-600 hover:text-rose-500 opacity-0 group-hover:opacity-100"><Trash2 size={16}/></button>
+                    <button key={sprint.id} onClick={() => setSelectedSprint(sprint)} className={`w-full text-left p-3 rounded-xl border transition-all group relative ${selectedSprint?.id === sprint.id ? 'bg-blue-600/10 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'}`}>
+                      <div className="font-bold text-sm truncate pr-6">{sprint.name || `Sprint #${sprint.id}`}</div>
+                      <div className="text-[9px] opacity-60 mt-1">{formatDate(sprint.start_date)} / {formatDate(sprint.end_date)}</div>
+                      <button onClick={(e) => handleDeleteSprint(e, sprint.id)} className="absolute top-3 right-3 text-slate-600 hover:text-rose-500 opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button>
                     </button>
                   ))}
                 </div>
 
-                <div className="lg:col-span-3 space-y-6">
+                {/* Main Content Area (10 cols) */}
+                <div className="lg:col-span-10 space-y-8">
                   {selectedSprint ? (
                     <>
-                      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between shadow-xl">
-                        <button disabled={isFirstDay} onClick={() => changeDay(-1)} className={`p-2 rounded-lg ${isFirstDay ? 'text-slate-800' : 'text-slate-400 hover:bg-slate-800'}`}><ChevronLeft size={24}/></button>
-                        <div className="text-center">
-                          <h2 className="text-xl font-bold">{new Date(currentDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
-                          <p className="text-xs text-slate-500 font-mono uppercase tracking-widest">{selectedSprint.name || `Sprint #${selectedSprint.id}`}</p>
+                      {/* Top: Summary Grid */}
+                      <section className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
+                        <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                             <BarChart3 size={16} className="text-amber-500" /> Sprint Health Overview
+                          </h3>
+                          <div className="flex gap-4">
+                            {completionLevels.map(level => (
+                              <div key={level.id} className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: level.color }}></div>
+                                <span className="text-[9px] font-bold text-slate-500 uppercase">{level.text}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <button disabled={isLastDay} onClick={() => changeDay(1)} className={`p-2 rounded-lg ${isLastDay ? 'text-slate-800' : 'text-slate-400 hover:bg-slate-800'}`}><ChevronRight size={24}/></button>
-                      </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-950/30">
+                                <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase sticky left-0 bg-slate-900 z-10 w-[180px]">Student</th>
+                                {getDatesInRange(selectedSprint.start_date, selectedSprint.end_date).map(date => (
+                                  <th key={date} className={`px-2 py-3 text-center min-w-[40px] ${date === currentDate ? 'bg-blue-600/10' : ''}`}>
+                                    <div className="text-[8px] font-mono text-slate-600">{new Date(date).toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                                    <div className={`text-[10px] font-bold ${date === currentDate ? 'text-blue-400 underline decoration-2' : 'text-slate-500'}`}>{new Date(date).getDate()}</div>
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/50">
+                              {summaryData.map(student => (
+                                <tr key={student.id} className="hover:bg-slate-800/20 transition-colors">
+                                  <td className="px-4 py-2 sticky left-0 bg-slate-900 z-10">
+                                    <div className="flex items-center gap-3">
+                                      <img src={student.image_url} className="w-6 h-6 rounded-lg object-cover" />
+                                      <p className="text-[11px] font-bold truncate max-w-[120px]">{student.name}</p>
+                                    </div>
+                                  </td>
+                                  {getDatesInRange(selectedSprint.start_date, selectedSprint.end_date).map(date => {
+                                    const color = student.days[date];
+                                    return (
+                                      <td
+                                        key={date}
+                                        className={`p-0 text-center cursor-pointer transition-all border-r border-slate-800/30 ${date === currentDate ? 'ring-2 ring-blue-500 ring-inset z-10 relative' : ''}`}
+                                        onClick={() => setCurrentDate(date)}
+                                        style={{ backgroundColor: color || 'transparent' }}
+                                      >
+                                        <div className="h-10 min-w-[40px] flex items-center justify-center">
+                                          {!color && <div className="w-1.5 h-1.5 rounded-full bg-slate-800"></div>}
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
 
-                      <div className="flex justify-between items-center px-2">
-                        <h3 className="font-bold text-slate-400 uppercase text-xs tracking-wider">Sprinters</h3>
-                        <button onClick={() => setShowEnrollModal(true)} className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1"><UserPlus size={14}/> ENROLL</button>
-                      </div>
+                      {/* Bottom: Daily Management */}
+                      <section className="space-y-6">
+                        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between shadow-xl">
+                          <button disabled={isFirstDay} onClick={() => changeDay(-1)} className={`p-2 rounded-lg ${isFirstDay ? 'text-slate-800' : 'text-slate-400 hover:bg-slate-800'}`}><ChevronLeft size={24}/></button>
+                          <div className="text-center">
+                            <h2 className="text-xl font-bold">{new Date(currentDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
+                            <p className="text-xs text-slate-500 font-mono uppercase tracking-widest">{selectedSprint.name || `Sprint #${selectedSprint.id}`}</p>
+                          </div>
+                          <button disabled={isLastDay} onClick={() => changeDay(1)} className={`p-2 rounded-lg ${isLastDay ? 'text-slate-800' : 'text-slate-400 hover:bg-slate-800'}`}><ChevronRight size={24}/></button>
+                        </div>
 
-                      <div className="space-y-4">
-                        {dailyData.length === 0 ? (
-                          <div className="bg-slate-900/50 border-2 border-dashed border-slate-800 rounded-3xl p-12 text-center text-slate-500 italic">No sprinters enrolled.</div>
-                        ) : (
-                          dailyData.map(student => (
-                            <div key={student.student_id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center shadow-lg group hover:border-slate-700 transition-colors relative">
-                              <div className="flex items-center gap-4 min-w-[220px]">
-                                <img src={student.image_url} alt={student.name} className="w-12 h-12 rounded-xl object-cover border border-slate-700" />
-                                <div>
-                                  <h4 className="font-bold text-sm truncate max-w-[140px]">{student.name}</h4>
-                                  <div className="flex flex-col">
-                                    <span className="text-[10px] text-slate-500 font-mono">{student.login}</span>
+                        <div className="flex justify-between items-center px-2">
+                          <h3 className="font-bold text-slate-400 uppercase text-xs tracking-wider">Objectives for this day</h3>
+                          <button onClick={() => setShowEnrollModal(true)} className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1"><UserPlus size={14}/> ENROLL STUDENT</button>
+                        </div>
+
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                          {dailyData.length === 0 ? (
+                            <div className="col-span-full bg-slate-900/50 border-2 border-dashed border-slate-800 rounded-3xl p-12 text-center text-slate-500 italic">No sprinters enrolled.</div>
+                          ) : (
+                            dailyData.map(student => (
+                              <div key={student.student_id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-4 shadow-lg group hover:border-slate-700 transition-colors relative">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-4">
+                                    <img src={student.image_url} alt={student.name} className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md" />
+                                    <div>
+                                      <h4 className="font-bold text-sm truncate max-w-[140px]">{student.name}</h4>
+                                      <div className="flex flex-col">
+                                        <span className="text-[10px] text-slate-500 font-mono">{student.login}</span>
+                                        <select
+                                          className="text-[10px] text-purple-400 font-bold uppercase bg-transparent border-none outline-none cursor-pointer mt-0.5 max-w-[150px] truncate"
+                                          value={student.project_id || 0}
+                                          onChange={(e) => enrollOrUpdateStudent(student.student_id, parseInt(e.target.value), false)}
+                                        >
+                                          <option value="0" className="bg-slate-900">Select Project</option>
+                                          {projects.map(p => <option key={p.id} value={p.id} className="bg-slate-900">{p.name.length > 20 ? p.name.substring(0, 17) + '...' : p.name}</option>)}
+                                        </select>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
                                     <select
-                                      className="text-[10px] text-purple-400 font-bold uppercase bg-transparent border-none outline-none cursor-pointer mt-0.5 max-w-[150px] truncate"
-                                      value={student.project_id || 0}
-                                      onChange={(e) => enrollOrUpdateStudent(student.student_id, parseInt(e.target.value), false)}
+                                      className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border outline-none cursor-pointer`}
+                                      style={{
+                                        backgroundColor: student.completion_color ? `${student.completion_color}1a` : '#1e293b',
+                                        borderColor: student.completion_color ? `${student.completion_color}50` : '#334155',
+                                        color: student.completion_color || '#94a3b8'
+                                      }}
+                                      value={student.completion_level_id || 0}
+                                      onChange={(e) => updateObjective(student.student_id, student.objective || '', parseInt(e.target.value))}
                                     >
-                                      <option value="0" className="bg-slate-900">Select Project</option>
-                                      {projects.map(p => <option key={p.id} value={p.id} className="bg-slate-900">{p.name.length > 20 ? p.name.substring(0, 17) + '...' : p.name}</option>)}
+                                      <option value="0" className="bg-slate-900 text-slate-400">Level</option>
+                                      {completionLevels.map(cl => (
+                                        <option key={cl.id} value={cl.id} className="bg-slate-900" style={{ color: cl.color }}>{cl.text}</option>
+                                      ))}
                                     </select>
+                                    <button onClick={() => removeFromSprint(student.student_id)} className="p-2.5 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all border border-transparent hover:border-rose-500/20"><UserMinus size={18}/></button>
                                   </div>
                                 </div>
+                                <div className="w-full">
+                                  <textarea
+                                    placeholder="Write objective..."
+                                    className={`w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 transition-all min-h-[80px]`}
+                                    style={student.completion_color && student.completion_text === 'Done' ? { textDecoration: 'line-through', color: '#64748b', fontStyle: 'italic' } : {}}
+                                    value={student.objective || ''}
+                                    onChange={(e) => setDailyData(dailyData.map(d => d.student_id === student.student_id ? {...d, objective: e.target.value} : d))}
+                                    onBlur={(e) => updateObjective(student.student_id, e.target.value, student.completion_level_id)}
+                                  />
+                                </div>
                               </div>
-                              <div className="flex-1 w-full">
-                                <input
-                                  type="text"
-                                  placeholder="Set objective..."
-                                  className={`w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-all ${student.completion_color ? '' : ''}`}
-                                  style={student.completion_color && student.completion_text === 'Done' ? { textDecoration: 'line-through', color: '#64748b', fontStyle: 'italic' } : {}}
-                                  value={student.objective || ''}
-                                  onChange={(e) => setDailyData(dailyData.map(d => d.student_id === student.student_id ? {...d, objective: e.target.value} : d))}
-                                  onBlur={(e) => updateObjective(student.student_id, e.target.value, student.completion_level_id)}
-                                />
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <select
-                                  className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border outline-none cursor-pointer`}
-                                  style={{
-                                    backgroundColor: student.completion_color ? `${student.completion_color}1a` : '#1e293b',
-                                    borderColor: student.completion_color ? `${student.completion_color}50` : '#334155',
-                                    color: student.completion_color || '#94a3b8'
-                                  }}
-                                  value={student.completion_level_id || 0}
-                                  onChange={(e) => updateObjective(student.student_id, student.objective || '', parseInt(e.target.value))}
-                                >
-                                  <option value="0" className="bg-slate-900 text-slate-400">Level</option>
-                                  {completionLevels.map(cl => (
-                                    <option key={cl.id} value={cl.id} className="bg-slate-900" style={{ color: cl.color }}>{cl.text}</option>
-                                  ))}
-                                </select>
-                                <button onClick={() => removeFromSprint(student.student_id)} className="p-2.5 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all border border-transparent hover:border-rose-500/20"><UserMinus size={18}/></button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
+                            ))
+                          )}
+                        </div>
+                      </section>
                     </>
-                  ) : <div className="h-64 flex flex-col items-center justify-center text-slate-600 italic"><Users className="mb-4 opacity-20" size={64}/><p>Select a sprint.</p></div>}
+                  ) : (
+                    <div className="h-64 flex flex-col items-center justify-center text-slate-600 italic">
+                      <LayoutDashboard className="mb-4 opacity-20" size={64}/>
+                      <p>Select a sprint to begin management.</p>
+                    </div>
+                  )}
                 </div>
              </div>
           ) : (
-            <div className="space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
-                  <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-blue-400">Student Library</h2>
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                    {students.map(student => (
-                      <div key={student.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-blue-500 transition-all">
-                        <img src={student.image_url} className="w-16 h-16 rounded-2xl object-cover mb-3 border-2 border-slate-800 group-hover:border-blue-500 transition-all" />
-                        <p className="text-sm font-bold truncate w-full">{student.name}</p>
-                        <p className="text-[10px] text-slate-600 font-mono">{student.login}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
+                <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-blue-400">Student Library</h2>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                  {students.map(student => (
+                    <div key={student.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-blue-500 transition-all">
+                      <img src={student.image_url} className="w-16 h-16 rounded-2xl object-cover mb-3 border-2 border-slate-800 group-hover:border-blue-500 transition-all" />
+                      <p className="text-sm font-bold truncate w-full">{student.name}</p>
+                      <p className="text-[10px] text-slate-600 font-mono">{student.login}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <div className="space-y-8">
                 <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
                   <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-purple-400">Project Library</h2>
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
@@ -409,34 +524,30 @@ function App() {
                     ))}
                   </div>
                 </section>
+                <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
+                  <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-amber-400">Completion Levels</h2>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {completionLevels.map(level => (
+                      <div key={level.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center relative group">
+                        <div className="w-8 h-8 rounded-full mb-3" style={{ backgroundColor: level.color }}></div>
+                        <p className="text-xs font-bold truncate w-full" style={{ color: level.color }}>{level.text}</p>
+                        <button onClick={() => handleDeleteLevel(level.id)} className="absolute top-2 right-2 text-slate-700 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
               </div>
-              <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
-                <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-amber-400">Completion Levels</h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {completionLevels.map(level => (
-                    <div key={level.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center relative group">
-                      <div className="w-8 h-8 rounded-full mb-3" style={{ backgroundColor: level.color }}></div>
-                      <p className="text-xs font-bold truncate w-full" style={{ color: level.color }}>{level.text}</p>
-                      <button onClick={() => handleDeleteLevel(level.id)} className="absolute top-2 right-2 text-slate-700 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
-                    </div>
-                  ))}
-                </div>
-              </section>
             </div>
           )}
         </div>
       </main>
 
-      {/* Modals - Simplified */}
-      {showSprintModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-blue-400">New Sprint</h2><form onSubmit={handleCreateSprint} className="space-y-4"><input type="text" placeholder="Name" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" onChange={e => setSprintForm({...sprintForm, name: e.target.value})}/><input type="date" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" onChange={e => setSprintForm({...sprintForm, startDate: e.target.value})}/><input type="date" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" onChange={e => setSprintForm({...sprintForm, endDate: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowSprintModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-blue-600 rounded-xl font-bold">Create</button></div></form></div></div>}
-
-      {showStudentModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-emerald-400">Add to Library</h2><form onSubmit={handleAddStudent} className="space-y-4"><input type="text" placeholder="Full Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})}/><input type="text" placeholder="Login" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={studentForm.login} onChange={e => setStudentForm({...studentForm, login: e.target.value})}/><input type="url" placeholder="Image URL" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={studentForm.imageUrl} onChange={e => setStudentForm({...studentForm, imageUrl: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowStudentModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-emerald-600 rounded-xl font-bold">Save</button></div></form></div></div>}
-
-      {showProjectModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-purple-400">Library Project</h2><form onSubmit={handleCreateProject} className="space-y-4"><input type="text" placeholder="Project Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})}/><textarea placeholder="Description (optional)" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 min-h-[100px] outline-none" value={projectForm.description} onChange={e => setProjectForm({...projectForm, description: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowProjectModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-purple-600 rounded-xl font-bold">Save</button></div></form></div></div>}
-
-      {showLevelModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-amber-400">New Completion Level</h2><form onSubmit={handleCreateLevel} className="space-y-4"><input type="text" placeholder="Level Text (max 20 chars)" maxLength={20} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={levelForm.text} onChange={e => setLevelForm({...levelForm, text: e.target.value})}/><div className="flex items-center gap-4 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2"><label className="text-xs font-bold text-slate-500 uppercase">Color</label><input type="color" className="bg-transparent border-none w-10 h-8 cursor-pointer" value={levelForm.color} onChange={e => setLevelForm({...levelForm, color: e.target.value})}/><span className="font-mono text-xs uppercase text-slate-400">{levelForm.color}</span></div><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowLevelModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-amber-600 rounded-xl font-bold">Save</button></div></form></div></div>}
-
-      {showEnrollModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6">Enroll in {selectedSprint?.name || 'Sprint'}</h2><form onSubmit={(e) => { e.preventDefault(); enrollOrUpdateStudent(enrollForm.studentId, enrollForm.projectId, true); }} className="space-y-6"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Student</label><select required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 appearance-none focus:border-blue-500 outline-none" value={enrollForm.studentId} onChange={e => setEnrollForm({...enrollForm, studentId: parseInt(e.target.value)})}><option value="0">Choose a student...</option>{students.map(s => (<option key={s.id} value={s.id}>{s.name} ({s.login})</option>))}</select></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Assign Project</label><select required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 appearance-none focus:border-blue-500 outline-none" value={enrollForm.projectId} onChange={e => setEnrollForm({...enrollForm, projectId: parseInt(e.target.value)})}><option value="0">Choose a project...</option>{projects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowEnrollModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" disabled={enrollForm.studentId === 0 || enrollForm.projectId === 0} className="flex-1 py-3 bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 rounded-xl font-bold transition-all">Enroll</button></div></form></div></div>}
+      {/* Modals - Same as before */}
+      {showSprintModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-blue-400">New Sprint</h2><form onSubmit={handleCreateSprint} className="space-y-4"><input type="text" placeholder="Name" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-blue-500" onChange={e => setSprintForm({...sprintForm, name: e.target.value})}/><input type="date" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-blue-500" onChange={e => setSprintForm({...sprintForm, startDate: e.target.value})}/><input type="date" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-blue-500" onChange={e => setSprintForm({...sprintForm, endDate: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowSprintModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-blue-600 rounded-xl font-bold">Create</button></div></form></div></div>}
+      {showStudentModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-emerald-400">Add Student</h2><form onSubmit={handleAddStudent} className="space-y-4"><input type="text" placeholder="Full Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-emerald-500" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})}/><input type="text" placeholder="Login" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-emerald-500" value={studentForm.login} onChange={e => setStudentForm({...studentForm, login: e.target.value})}/><input type="url" placeholder="Image URL" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-emerald-500" value={studentForm.imageUrl} onChange={e => setStudentForm({...studentForm, imageUrl: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowStudentModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-emerald-600 rounded-xl font-bold">Save</button></div></form></div></div>}
+      {showProjectModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-purple-400">New Project</h2><form onSubmit={handleCreateProject} className="space-y-4"><input type="text" placeholder="Project Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-purple-500" value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})}/><textarea placeholder="Description" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 min-h-[100px] outline-none focus:border-purple-500" value={projectForm.description} onChange={e => setProjectForm({...projectForm, description: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowProjectModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-purple-600 rounded-xl font-bold">Save</button></div></form></div></div>}
+      {showLevelModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-amber-400">New Level</h2><form onSubmit={handleCreateLevel} className="space-y-4"><input type="text" placeholder="Text" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={levelForm.text} onChange={e => setLevelForm({...levelForm, text: e.target.value})}/><input type="color" className="w-full h-10 cursor-pointer" value={levelForm.color} onChange={e => setLevelForm({...levelForm, color: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowLevelModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-amber-600 rounded-xl font-bold">Save</button></div></form></div></div>}
+      {showEnrollModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6">Enroll Student</h2><form onSubmit={(e) => { e.preventDefault(); enrollOrUpdateStudent(enrollForm.studentId, enrollForm.projectId, true); }} className="space-y-6"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Student</label><select required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 outline-none" value={enrollForm.studentId} onChange={e => setEnrollForm({...enrollForm, studentId: parseInt(e.target.value)})}><option value="0">Choose...</option>{students.map(s => (<option key={s.id} value={s.id}>{s.name}</option>))}</select></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Project</label><select required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 outline-none" value={enrollForm.projectId} onChange={e => setEnrollForm({...enrollForm, projectId: parseInt(e.target.value)})}><option value="0">Choose...</option>{projects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowEnrollModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" disabled={enrollForm.studentId === 0 || enrollForm.projectId === 0} className="flex-1 py-3 bg-emerald-600 rounded-xl font-bold">Enroll</button></div></form></div></div>}
     </div>
   )
 }

@@ -86,18 +86,18 @@ const initDb = async () => {
         END IF;
       END $$;
 
-      -- Seed default completion levels if empty
+      -- Seed default completion levels safely
       INSERT INTO completion_levels (text, color)
       SELECT 'Not Started', '#475569'
-      WHERE NOT EXISTS (SELECT 1 FROM completion_levels LIMIT 1);
+      WHERE NOT EXISTS (SELECT 1 FROM completion_levels WHERE text = 'Not Started');
 
       INSERT INTO completion_levels (text, color)
       SELECT 'In Progress', '#3b82f6'
-      WHERE (SELECT COUNT(*) FROM completion_levels) = 1;
+      WHERE NOT EXISTS (SELECT 1 FROM completion_levels WHERE text = 'In Progress');
 
       INSERT INTO completion_levels (text, color)
       SELECT 'Done', '#10b981'
-      WHERE (SELECT COUNT(*) FROM completion_levels) = 2;
+      WHERE NOT EXISTS (SELECT 1 FROM completion_levels WHERE text = 'Done');
 
       -- Migration: Add project_id to daily_objectives if missing
       DO $$
@@ -331,6 +331,48 @@ app.delete('/api/sprints/:sprintId/students/:studentId', async (req, res) => {
 });
 
 // Daily Objective Routes
+app.get('/api/sprints/:sprintId/summary', async (req, res) => {
+  const sprintId = parseInt(req.params.sprintId);
+  try {
+    const result = await pool.query(`
+      SELECT
+        s.id as student_id,
+        s.name,
+        s.login,
+        s.image_url,
+        obj.date,
+        cl.color as completion_color
+      FROM students s
+      JOIN sprint_students ss ON s.id = ss.student_id
+      LEFT JOIN daily_objectives obj ON s.id = obj.student_id AND obj.sprint_id = ss.sprint_id
+      LEFT JOIN completion_levels cl ON obj.completion_level_id = cl.id
+      WHERE ss.sprint_id = $1
+      ORDER BY s.name ASC
+    `, [sprintId]);
+
+    const studentsMap: any = {};
+    result.rows.forEach(row => {
+      if (!studentsMap[row.student_id]) {
+        studentsMap[row.student_id] = {
+          id: row.student_id,
+          name: row.name,
+          login: row.login,
+          image_url: row.image_url,
+          days: {}
+        };
+      }
+      if (row.date) {
+        const dateStr = new Date(row.date).toISOString().split('T')[0];
+        studentsMap[row.student_id].days[dateStr] = row.completion_color;
+      }
+    });
+
+    res.json(Object.values(studentsMap));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 app.get('/api/sprints/:sprintId/daily', async (req, res) => {
   const sprintId = parseInt(req.params.sprintId);
   const { date } = req.query;
