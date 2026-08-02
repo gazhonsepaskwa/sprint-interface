@@ -13,12 +13,14 @@ interface Student {
   name: string;
   login: string;
   image_url: string;
+  usage_count?: number;
 }
 
 interface Project {
   id: number;
   name: string;
   description?: string;
+  usage_count?: number;
 }
 
 interface CompletionLevel {
@@ -598,10 +600,14 @@ function App() {
                 </div>
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                   {students
-                    .filter(s =>
-                      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      s.login.toLowerCase().includes(searchTerm.toLowerCase())
-                    )
+                    .filter(s => {
+                      if (searchTerm === '') return (s.usage_count || 0) > 0;
+                      return (
+                        s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        s.login.toLowerCase().includes(searchTerm.toLowerCase())
+                      );
+                    })
+                    .slice(0, searchTerm === '' ? 9 : undefined)
                     .map(student => (
                     <div key={student.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-blue-500 transition-all relative">
                       <img src={student.image_url} className="w-16 h-16 rounded-2xl object-cover mb-3 border-2 border-slate-800 group-hover:border-blue-500 transition-all" />
@@ -638,7 +644,11 @@ function App() {
                   </div>
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                     {projects
-                      .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .filter(p => {
+                        if (searchTerm === '') return (p.usage_count || 0) > 0;
+                        return p.name.toLowerCase().includes(searchTerm.toLowerCase());
+                      })
+                      .slice(0, searchTerm === '' ? 9 : undefined)
                       .map(project => (
                       <div key={project.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-purple-500 transition-all relative">
                         <div className="w-16 h-16 rounded-2xl bg-slate-900 flex items-center justify-center mb-3 border-2 border-slate-800 group-hover:border-purple-500 transition-all"><Briefcase size={24} className="text-slate-500"/></div>

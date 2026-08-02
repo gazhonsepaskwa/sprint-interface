@@ -288,7 +288,23 @@ app.post('/api/students', async (req, res) => {
 
 app.get('/api/students', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM students ORDER BY name ASC');
+    const result = await pool.query(`
+      SELECT s.*,
+             (COALESCE(ss_usage.count, 0) + COALESCE(do_usage.count, 0)) as usage_count
+      FROM students s
+      LEFT JOIN (
+        SELECT student_id, COUNT(*) as count
+        FROM sprint_students
+        GROUP BY student_id
+      ) ss_usage ON s.id = ss_usage.student_id
+      LEFT JOIN (
+        SELECT student_id, COUNT(*) as count
+        FROM daily_objectives
+        WHERE student_id IS NOT NULL
+        GROUP BY student_id
+      ) do_usage ON s.id = do_usage.student_id
+      ORDER BY usage_count DESC, s.name ASC
+    `);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -408,7 +424,23 @@ app.post('/api/projects', async (req, res) => {
 
 app.get('/api/projects', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM projects ORDER BY name ASC');
+    const result = await pool.query(`
+      SELECT p.*,
+             (COALESCE(ss_usage.count, 0) + COALESCE(do_usage.count, 0)) as usage_count
+      FROM projects p
+      LEFT JOIN (
+        SELECT project_id, COUNT(*) as count
+        FROM sprint_students
+        GROUP BY project_id
+      ) ss_usage ON p.id = ss_usage.project_id
+      LEFT JOIN (
+        SELECT project_id, COUNT(*) as count
+        FROM daily_objectives
+        WHERE project_id IS NOT NULL
+        GROUP BY project_id
+      ) do_usage ON p.id = do_usage.project_id
+      ORDER BY usage_count DESC, p.name ASC
+    `);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
