@@ -62,12 +62,21 @@ const initDb = async () => {
         id SERIAL PRIMARY KEY,
         student_id INTEGER REFERENCES students(id),
         sprint_id INTEGER REFERENCES sprints(id),
+        project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
         date DATE NOT NULL,
         objective TEXT,
         is_done BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (student_id, sprint_id, date)
       );
+
+      -- Migration: Add project_id to daily_objectives if missing
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='daily_objectives' AND column_name='project_id') THEN
+          ALTER TABLE daily_objectives ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
 
       -- Add unique constraint if it doesn't exist (for existing databases)
       DO $$
@@ -271,15 +280,29 @@ app.get('/api/sprints/:sprintId/daily', async (req, res) => {
         s.name,
         s.login,
         s.image_url,
-        ss.project_id,
-        p.name as project_name,
+        active_project.id as project_id,
+        active_project.name as project_name,
         obj.id as objective_id,
         obj.objective,
         obj.is_done
       FROM students s
       JOIN sprint_students ss ON s.id = ss.student_id
-      LEFT JOIN projects p ON ss.project_id = p.id
       LEFT JOIN daily_objectives obj ON s.id = obj.student_id AND obj.sprint_id = ss.sprint_id AND obj.date = $2
+      CROSS JOIN LATERAL (
+        SELECT p.id, p.name
+        FROM (
+          -- Get the latest project assignment on or before the selected date
+          SELECT project_id, date FROM daily_objectives
+          WHERE student_id = s.id AND sprint_id = ss.sprint_id AND date <= $2 AND project_id IS NOT NULL
+          UNION ALL
+          -- Fallback to the initial enrollment project
+          SELECT project_id, CAST('1900-01-01' AS DATE) FROM sprint_students
+          WHERE student_id = s.id AND sprint_id = ss.sprint_id
+        ) historical
+        JOIN projects p ON historical.project_id = p.id
+        ORDER BY historical.date DESC
+        LIMIT 1
+      ) active_project
       WHERE ss.sprint_id = $1
       ORDER BY s.name ASC
     `, [sprintId, date]);
@@ -291,17 +314,49 @@ app.get('/api/sprints/:sprintId/daily', async (req, res) => {
 });
 
 app.post('/api/objectives', async (req, res) => {
-  const { studentId, sprintId, date, objective, isDone } = req.body;
+  const { studentId, sprintId, date, objective, isDone, projectId } = req.body;
   try {
     const result = await pool.query(`
-      INSERT INTO daily_objectives (student_id, sprint_id, date, objective, is_done)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO daily_objectives (student_id, sprint_id, date, objective, is_done, project_id)
+      VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (student_id, sprint_id, date)
-      DO UPDATE SET objective = EXCLUDED.objective, is_done = EXCLUDED.is_done
+      DO UPDATE SET
+        objective = EXCLUDED.objective,
+        is_done = EXCLUDED.is_done,
+        project_id = COALESCE(EXCLUDED.project_id, daily_objectives.project_id)
       RETURNING *
-    `, [studentId, sprintId, date, objective, isDone]);
+    `, [studentId, sprintId, date, objective, isDone, projectId]);
     res.json(result.rows[0]);
   } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Update project for today and all FOLLOWING days
+app.post('/api/sprints/:sprintId/students/:studentId/project', async (req, res) => {
+  const sprintId = parseInt(req.params.sprintId);
+  const studentId = parseInt(req.params.studentId);
+  const { projectId, date } = req.body;
+
+  try {
+    // Save assignment to this specific day
+    await pool.query(`
+      INSERT INTO daily_objectives (student_id, sprint_id, date, project_id)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (student_id, sprint_id, date)
+      DO UPDATE SET project_id = EXCLUDED.project_id
+    `, [studentId, sprintId, date, projectId]);
+
+    // Clear any FUTURE project overrides for this student to let the new project carry forward
+    await pool.query(`
+      UPDATE daily_objectives
+      SET project_id = NULL
+      WHERE student_id = $1 AND sprint_id = $2 AND date > $3
+    `, [studentId, sprintId, date]);
+
+    res.json({ message: 'Project updated forward' });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: (err as Error).message });
   }
 });

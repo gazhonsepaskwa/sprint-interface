@@ -160,10 +160,18 @@ function App() {
   const enrollOrUpdateStudent = async (studentId: number, projectId: number, isModal = false) => {
     if (!selectedSprint || studentId === 0 || projectId === 0) return;
     try {
-      const res = await fetch(`${API_BASE}/api/sprints/${selectedSprint.id}/students`, {
+      const url = isModal
+        ? `${API_BASE}/api/sprints/${selectedSprint.id}/students`
+        : `${API_BASE}/api/sprints/${selectedSprint.id}/students/${studentId}/project`;
+
+      const body = isModal
+        ? { studentId, projectId }
+        : { projectId, date: currentDate };
+
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId, projectId }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Action failed');
 
