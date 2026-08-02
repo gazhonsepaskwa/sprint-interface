@@ -66,6 +66,7 @@ interface User {
 interface WhitelistEntry {
   id: number;
   login: string;
+  is_superuser: boolean;
   created_at: string;
 }
 
@@ -220,6 +221,23 @@ function App() {
     if (!confirm('Remove from whitelist?')) return;
     const res = await apiFetch(`${API_BASE}/api/whitelist/${id}`, { method: 'DELETE' });
     if (res.ok) fetchWhitelist();
+  };
+
+  const transferSuperuser = async (targetLogin: string) => {
+    if (!confirm(`Are you sure you want to transfer the Superuser role to ${targetLogin}? You will lose your Superuser privileges.`)) return;
+    const res = await apiFetch(`${API_BASE}/api/whitelist/transfer-superuser`, {
+      method: 'POST',
+      body: JSON.stringify({ targetLogin }),
+    });
+    if (res.ok) {
+      alert(`Role transferred to ${targetLogin}. Re-authenticating...`);
+      setCurrentView('dashboard');
+      checkAuth();
+      fetchWhitelist();
+    } else {
+      const data = await res.json();
+      alert(data.error || 'Transfer failed');
+    }
   };
 
   const fetchDailyData = async () => {
@@ -928,22 +946,37 @@ function App() {
                   {whitelist.map(entry => (
                     <div key={entry.id} className="bg-[#1c2333] border border-border rounded-xl p-4 flex items-center justify-between group hover:border-primary/50 transition-all">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-primary font-bold ${entry.is_superuser ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-primary/10'}`}>
                           {entry.login[0].toUpperCase()}
                         </div>
                         <div>
-                          <p className="font-bold">{entry.login}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold">{entry.login}</p>
+                            {entry.is_superuser && (
+                              <span className="text-[8px] bg-amber-500/20 text-amber-500 border border-amber-500/50 px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">Superuser</span>
+                            )}
+                          </div>
                           <p className="text-[10px] text-slate-500 font-mono">Added {new Date(entry.created_at).toLocaleDateString()}</p>
                         </div>
                       </div>
-                      {entry.login.toLowerCase() !== user?.login.toLowerCase() && (
-                        <button
-                          onClick={() => removeFromWhitelist(entry.id)}
-                          className="p-2 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {!entry.is_superuser && user?.is_superuser && (
+                          <button
+                            onClick={() => transferSuperuser(entry.login)}
+                            className="px-3 py-1.5 text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-lg hover:bg-amber-500/20 transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            TRANSFER ROLE
+                          </button>
+                        )}
+                        {!entry.is_superuser && (
+                          <button
+                            onClick={() => removeFromWhitelist(entry.id)}
+                            className="p-2 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {whitelist.length === 0 && (

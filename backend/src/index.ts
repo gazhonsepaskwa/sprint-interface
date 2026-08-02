@@ -164,15 +164,35 @@ const initDb = async () => {
       CREATE TABLE IF NOT EXISTS whitelist (
         id SERIAL PRIMARY KEY,
         login TEXT UNIQUE NOT NULL,
+        is_superuser BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Migration: Add is_superuser column if it doesn't exist
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='whitelist' AND column_name='is_superuser') THEN
+          ALTER TABLE whitelist ADD COLUMN is_superuser BOOLEAN DEFAULT FALSE;
+        END IF;
+      END $$;
     `);
 
-    // Seed Superuser
-    const SUPERUSER = (process.env.SUPERUSER_LOGIN || 'nalebrun').trim().toLowerCase();
-    await pool.query('INSERT INTO whitelist (login) VALUES ($1) ON CONFLICT (login) DO NOTHING', [SUPERUSER]);
+    // Bootstrap Superuser from ENV
+    const BOOTSTRAP_USER = (process.env.SUPERUSER_LOGIN || 'nalebrun').trim().toLowerCase();
 
-    console.log(`Database tables initialized. SUPERUSER seeded: ${SUPERUSER}`);
+    // Check if any superuser already exists
+    const superuserCheck = await pool.query('SELECT login FROM whitelist WHERE is_superuser = TRUE');
+
+    if (superuserCheck.rows.length === 0) {
+      console.log(`[INIT] No superuser found. Bootstrapping ${BOOTSTRAP_USER} as initial Superuser.`);
+      await pool.query(`
+        INSERT INTO whitelist (login, is_superuser)
+        VALUES ($1, TRUE)
+        ON CONFLICT (login) DO UPDATE SET is_superuser = TRUE
+      `, [BOOTSTRAP_USER]);
+    }
+
+    console.log('Database tables initialized');
   } catch (err) {
     console.error('Error initializing database:', err);
   }
@@ -239,28 +259,27 @@ app.get('/api/auth/42/callback', async (req, res) => {
     });
 
     const userData = userRes.data;
-    console.log(`[AUTH] 42 API returned login: "${userData.login}"`);
+    const login = userData.login.toLowerCase();
+    console.log(`[AUTH] 42 API returned login: "${login}"`);
 
-    // Check Whitelist
-    const whitelistRes = await pool.query('SELECT * FROM whitelist WHERE login = $1', [userData.login]);
-    const SUPERUSER = (process.env.SUPERUSER_LOGIN || 'nalebrun').trim();
-    const isSuperuser = userData.login === SUPERUSER;
+    // Check Whitelist and Superuser status in DB
+    const whitelistRes = await pool.query('SELECT is_superuser FROM whitelist WHERE login = $1', [login]);
 
     if (whitelistRes.rows.length === 0) {
-      console.log(`[AUTH] Access REJECTED for ${userData.login} (not in whitelist)`);
+      console.log(`[AUTH] Access REJECTED for ${login} (not in whitelist)`);
       return res.redirect(`${FRONTEND_URL}/login?error=not_whitelisted`);
     }
 
-    console.log(`[AUTH] Access GRANTED for ${userData.login}`);
+    const isSuperuser = whitelistRes.rows[0].is_superuser;
+    console.log(`[AUTH] Access GRANTED for ${login} (Superuser: ${isSuperuser})`);
 
     // Store user in session
     (req.session as any).user = {
       id: userData.id,
-      login: userData.login,
+      login: login,
       name: userData.displayname,
       image_url: userData.image?.versions?.medium || userData.image?.link,
-      is_staff: userData['staff?'],
-      is_superuser: isSuperuser
+      is_staff: userData['staff?']
     };
 
     // Explicitly save the session before redirecting
@@ -284,10 +303,9 @@ const requireAuth = async (req: any, res: any, next: any) => {
   }
 
   const login = req.session.user.login;
-  const SUPERUSER = (process.env.SUPERUSER_LOGIN || 'nalebrun').trim();
 
   try {
-    const whitelistRes = await pool.query('SELECT login FROM whitelist WHERE login = $1', [login]);
+    const whitelistRes = await pool.query('SELECT is_superuser FROM whitelist WHERE login = $1', [login]);
 
     if (whitelistRes.rows.length === 0) {
       console.log(`[AUTH] Access REVOKED for ${login} (not in whitelist)`);
@@ -296,10 +314,12 @@ const requireAuth = async (req: any, res: any, next: any) => {
       });
     }
 
+    const isSuperuser = whitelistRes.rows[0].is_superuser;
+
     // Attach fresh permissions
     req.user = {
       ...req.session.user,
-      is_superuser: login === SUPERUSER
+      is_superuser: isSuperuser
     };
 
     next();
@@ -326,7 +346,7 @@ app.get('/api/whitelist', requireAuth, async (req: any, res) => {
   if (!req.user?.is_superuser) return res.status(403).json({ error: 'Superuser access required' });
 
   try {
-    const result = await pool.query('SELECT id, login, created_at FROM whitelist ORDER BY login ASC');
+    const result = await pool.query('SELECT id, login, is_superuser, created_at FROM whitelist ORDER BY login ASC');
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -341,7 +361,7 @@ app.post('/api/whitelist', requireAuth, async (req: any, res) => {
 
   try {
     const result = await pool.query(
-      'INSERT INTO whitelist (login) VALUES ($1) ON CONFLICT (login) DO NOTHING RETURNING id, login, created_at',
+      'INSERT INTO whitelist (login) VALUES ($1) ON CONFLICT (login) DO NOTHING RETURNING id, login, is_superuser, created_at',
       [login.trim().toLowerCase()]
     );
     res.status(201).json(result.rows[0]);
@@ -350,17 +370,51 @@ app.post('/api/whitelist', requireAuth, async (req: any, res) => {
   }
 });
 
+app.post('/api/whitelist/transfer-superuser', requireAuth, async (req: any, res) => {
+  if (!req.user?.is_superuser) return res.status(403).json({ error: 'Only the current Superuser can transfer their role' });
+
+  const { targetLogin } = req.body;
+  const currentLogin = req.user.login;
+
+  if (!targetLogin) return res.status(400).json({ error: 'Target login required' });
+  if (targetLogin.toLowerCase() === currentLogin.toLowerCase()) return res.status(400).json({ error: 'You are already the Superuser' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Ensure target user is whitelisted
+    const targetCheck = await client.query('SELECT login FROM whitelist WHERE login = $1', [targetLogin.toLowerCase()]);
+    if (targetCheck.rows.length === 0) {
+      throw new Error('Target user must be whitelisted first');
+    }
+
+    // 2. Remove superuser status from current user
+    await client.query('UPDATE whitelist SET is_superuser = FALSE WHERE login = $1', [currentLogin]);
+
+    // 3. Give superuser status to target user
+    await client.query('UPDATE whitelist SET is_superuser = TRUE WHERE login = $1', [targetLogin.toLowerCase()]);
+
+    await client.query('COMMIT');
+    res.json({ message: `Superuser role transferred to ${targetLogin}` });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: (err as Error).message });
+  } finally {
+    client.release();
+  }
+});
+
 app.delete('/api/whitelist/:id', requireAuth, async (req: any, res) => {
   if (!req.user?.is_superuser) return res.status(403).json({ error: 'Superuser access required' });
 
   const { id } = req.params;
-  const SUPERUSER = (process.env.SUPERUSER_LOGIN || 'nalebrun').trim().toLowerCase();
 
   try {
-    // Check if the user is the superuser
-    const userCheck = await pool.query('SELECT login FROM whitelist WHERE id = $1', [id]);
-    if (userCheck.rows.length > 0 && userCheck.rows[0].login.toLowerCase() === SUPERUSER) {
-      return res.status(400).json({ error: 'The Superuser cannot be removed from the whitelist' });
+    // Check if the user is a superuser
+    const userCheck = await pool.query('SELECT login, is_superuser FROM whitelist WHERE id = $1', [id]);
+    if (userCheck.rows.length > 0 && userCheck.rows[0].is_superuser) {
+      return res.status(400).json({ error: 'The Superuser cannot be removed from the whitelist. Transfer the role first.' });
     }
 
     await pool.query('DELETE FROM whitelist WHERE id = $1', [id]);
