@@ -1,4 +1,5 @@
 import express from 'express';
+import session from 'express-session';
 import { Pool } from 'pg';
 import cors from 'cors';
 import axios from 'axios';
@@ -9,8 +10,23 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5001;
 
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+}));
 app.use(express.json());
+
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'sprint-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -168,6 +184,75 @@ app.get('/api/health', async (req, res) => {
       error: (err as Error).message
     });
   }
+});
+
+// Auth Routes
+app.get('/api/auth/42', (req, res) => {
+  const UID = process.env.FORTYTWO_APP_ID;
+  const REDIRECT_URI = process.env.FORTYTWO_APP_REDIRECT_URI;
+
+  if (!UID || !REDIRECT_URI) {
+    return res.status(500).json({ error: '42 API credentials missing in .env' });
+  }
+
+  const url = `https://api.intra.42.fr/oauth/authorize?client_id=${UID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code`;
+  res.redirect(url);
+});
+
+app.get('/api/auth/42/callback', async (req, res) => {
+  const { code } = req.query;
+  const UID = process.env.FORTYTWO_APP_ID;
+  const SECRET = process.env.FORTYTWO_APP_SECRET;
+  const REDIRECT_URI = process.env.FORTYTWO_APP_REDIRECT_URI;
+  const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+  if (!code) return res.redirect(`${FRONTEND_URL}/login?error=no_code`);
+
+  try {
+    // Exchange code for token
+    const tokenRes = await axios.post('https://api.intra.42.fr/oauth/token', {
+      grant_type: 'authorization_code',
+      client_id: UID,
+      client_secret: SECRET,
+      code: code,
+      redirect_uri: REDIRECT_URI
+    });
+
+    const accessToken = tokenRes.data.access_token;
+
+    // Get user info
+    const userRes = await axios.get('https://api.intra.42.fr/v2/me', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    const userData = userRes.data;
+
+    // Store user in session
+    (req.session as any).user = {
+      id: userData.id,
+      login: userData.login,
+      name: userData.displayname,
+      image_url: userData.image?.versions?.medium || userData.image?.link,
+      is_staff: userData['staff?']
+    };
+
+    res.redirect(FRONTEND_URL);
+  } catch (err) {
+    console.error('Auth Error:', (err as any).response?.data || (err as Error).message);
+    res.redirect(`${FRONTEND_URL}/login?error=auth_failed`);
+  }
+});
+
+app.get('/api/auth/me', (req, res) => {
+  res.json((req.session as any).user || null);
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) return res.status(500).json({ error: 'Logout failed' });
+    res.clearCookie('connect.sid');
+    res.json({ message: 'Logged out' });
+  });
 });
 
 // Sprint Routes

@@ -54,11 +54,21 @@ interface SprintSummaryStudent {
   is_goal_met?: boolean;
 }
 
+interface User {
+  id: number;
+  login: string;
+  name: string;
+  image_url: string;
+  is_staff: boolean;
+}
+
 type View = 'dashboard' | 'libraries';
 
 function App() {
   const API_BASE = `http://${window.location.hostname}:5001`;
 
+  const [user, setUser] = useState<User | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -92,6 +102,43 @@ function App() {
   const [enrollForm, setEnrollForm] = useState({ studentId: 0, projectId: 0 });
   const [goalForm, setGoalForm] = useState({ studentId: 0, studentName: '', goal: '', isMet: false });
 
+  const apiFetch = async (url: string, options: RequestInit = {}) => {
+    return fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+  };
+
+  const checkAuth = async () => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/auth/me`);
+      const userData = await res.json();
+      setUser(userData);
+    } catch (err) {
+      console.error('Auth check failed:', err);
+    } finally {
+      setLoadingAuth(false);
+    }
+  };
+
+  const handleLogin = () => {
+    window.location.href = `${API_BASE}/api/auth/42`;
+  };
+
+  const handleLogout = async () => {
+    if (!confirm('Are you sure you want to log out?')) return;
+    try {
+      await apiFetch(`${API_BASE}/api/auth/logout`, { method: 'POST' });
+      setUser(null);
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
+  };
+
   const formatDate = (date: string | Date) => {
     return new Date(date).toISOString().split('T')[0];
   };
@@ -99,10 +146,10 @@ function App() {
   const fetchData = async () => {
     try {
       const [sprintsRes, studentsRes, projectsRes, levelsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/sprints`),
-        fetch(`${API_BASE}/api/students`),
-        fetch(`${API_BASE}/api/projects`),
-        fetch(`${API_BASE}/api/completion-levels`)
+        apiFetch(`${API_BASE}/api/sprints`),
+        apiFetch(`${API_BASE}/api/students`),
+        apiFetch(`${API_BASE}/api/projects`),
+        apiFetch(`${API_BASE}/api/completion-levels`)
       ]);
       const sprintsData = await sprintsRes.json();
       const studentsData = await studentsRes.json();
@@ -127,7 +174,7 @@ function App() {
   const fetchDailyData = async () => {
     if (!selectedSprint) return;
     try {
-      const res = await fetch(`${API_BASE}/api/sprints/${selectedSprint.id}/daily?date=${currentDate}`);
+      const res = await apiFetch(`${API_BASE}/api/sprints/${selectedSprint.id}/daily?date=${currentDate}`);
       const data = await res.json();
       setDailyData(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -138,7 +185,7 @@ function App() {
   const fetchSummaryData = async () => {
     if (!selectedSprint) return;
     try {
-      const res = await fetch(`${API_BASE}/api/sprints/${selectedSprint.id}/summary`);
+      const res = await apiFetch(`${API_BASE}/api/sprints/${selectedSprint.id}/summary`);
       const data = await res.json();
       setSummaryData(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -147,6 +194,7 @@ function App() {
   };
 
   useEffect(() => {
+    checkAuth();
     fetchData();
   }, []);
 
@@ -165,9 +213,8 @@ function App() {
 
   const handleCreateSprint = async (e: React.FormEvent) => {
     e.preventDefault();
-    await fetch(`${API_BASE}/api/sprints`, {
+    await apiFetch(`${API_BASE}/api/sprints`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sprintForm),
     });
     setShowSprintModal(false);
@@ -179,9 +226,8 @@ function App() {
     const method = editingId ? 'PUT' : 'POST';
     const url = editingId ? `${API_BASE}/api/students/${editingId}` : `${API_BASE}/api/students`;
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(studentForm),
       });
       if (!res.ok) throw new Error('Failed to save student');
@@ -199,9 +245,8 @@ function App() {
     const method = editingId ? 'PUT' : 'POST';
     const url = editingId ? `${API_BASE}/api/projects/${editingId}` : `${API_BASE}/api/projects`;
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(projectForm),
       });
       if (!res.ok) throw new Error('Failed to save project');
@@ -219,9 +264,8 @@ function App() {
     const method = editingId ? 'PUT' : 'POST';
     const url = editingId ? `${API_BASE}/api/completion-levels/${editingId}` : `${API_BASE}/api/completion-levels`;
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(levelForm),
       });
       if (!res.ok) throw new Error('Failed to save level');
@@ -238,7 +282,7 @@ function App() {
     if (!confirm('Sync projects from 42 Cursus? This will fetch standard curriculum projects.')) return;
     setSyncingProjects(true);
     try {
-      const res = await fetch(`${API_BASE}/api/projects/sync-42`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/api/projects/sync-42`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Sync failed');
       alert(data.message);
@@ -255,7 +299,7 @@ function App() {
     if (!confirm('Sync all students from 42 Belgium? This may take a minute.')) return;
     setSyncingStudents(true);
     try {
-      const res = await fetch(`${API_BASE}/api/students/sync-42`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/api/students/sync-42`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Sync failed');
       alert(data.message);
@@ -272,9 +316,8 @@ function App() {
     e.preventDefault();
     if (!selectedSprint) return;
     try {
-      const res = await fetch(`${API_BASE}/api/sprints/${selectedSprint.id}/students/${goalForm.studentId}/goal`, {
+      const res = await apiFetch(`${API_BASE}/api/sprints/${selectedSprint.id}/students/${goalForm.studentId}/goal`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ goal: goalForm.goal, isMet: goalForm.isMet }),
       });
       if (!res.ok) throw new Error('Failed to update goal');
@@ -296,9 +339,8 @@ function App() {
         ? { studentId, projectId }
         : { projectId, date: currentDate };
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Action failed');
@@ -318,7 +360,7 @@ function App() {
   const removeFromSprint = async (studentId: number) => {
     if (!selectedSprint || !confirm('Remove from sprint?')) return;
     try {
-      await fetch(`${API_BASE}/api/sprints/${selectedSprint.id}/students/${studentId}`, { method: 'DELETE' });
+      await apiFetch(`${API_BASE}/api/sprints/${selectedSprint.id}/students/${studentId}`, { method: 'DELETE' });
       await fetchDailyData();
       await fetchSummaryData();
     } catch (err) {
@@ -329,27 +371,27 @@ function App() {
   const handleDeleteSprint = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (!confirm('Permanently delete sprint?')) return;
-    await fetch(`${API_BASE}/api/sprints/${id}`, { method: 'DELETE' });
+    await apiFetch(`${API_BASE}/api/sprints/${id}`, { method: 'DELETE' });
     if (selectedSprint?.id === id) setSelectedSprint(null);
     fetchData();
   };
 
   const handleDeleteLevel = async (id: number) => {
     if (!confirm('Delete this level?')) return;
-    await fetch(`${API_BASE}/api/completion-levels/${id}`, { method: 'DELETE' });
+    await apiFetch(`${API_BASE}/api/completion-levels/${id}`, { method: 'DELETE' });
     fetchData();
   };
 
   const handleDeleteStudent = async (id: number) => {
     if (!confirm('Permanently delete this student from library?')) return;
-    await fetch(`${API_BASE}/api/students/${id}`, { method: 'DELETE' });
+    await apiFetch(`${API_BASE}/api/students/${id}`, { method: 'DELETE' });
     fetchData();
   };
 
   const handleDropAllStudents = async () => {
     if (!confirm('DANGER: Permanently delete ALL students from the library and all sprints? This cannot be undone.')) return;
     try {
-      const res = await fetch(`${API_BASE}/api/students`, { method: 'DELETE' });
+      const res = await apiFetch(`${API_BASE}/api/students`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to drop students');
       await fetchData();
     } catch (err) {
@@ -359,15 +401,14 @@ function App() {
 
   const handleDeleteProject = async (id: number) => {
     if (!confirm('Permanently delete this project from library?')) return;
-    await fetch(`${API_BASE}/api/projects/${id}`, { method: 'DELETE' });
+    await apiFetch(`${API_BASE}/api/projects/${id}`, { method: 'DELETE' });
     fetchData();
   };
 
   const updateObjective = async (studentId: number, objective: string, completionLevelId?: number) => {
     if (!selectedSprint) return;
-    await fetch(`${API_BASE}/api/objectives`, {
+    await apiFetch(`${API_BASE}/api/objectives`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         studentId,
         sprintId: selectedSprint.id,
@@ -411,29 +452,68 @@ function App() {
     setEditingId(null);
   };
 
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-slate-500 font-bold uppercase tracking-widest animate-pulse">Authenticating...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-slate-200 font-sans flex flex-col">
-      <nav className="px-10 py-6 flex justify-between items-center sticky top-0 z-30 bg-background/80 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <span className="text-primary text-5xl font-bold tracking-tighter">42</span>
-          <div className="flex flex-col leading-none">
-            <span className="text-xl font-bold uppercase tracking-tight">Sprint</span>
-            <span className="text-xl font-bold uppercase tracking-tight">Platform</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-8">
-          <button onClick={() => setCurrentView('dashboard')} className={`text-sm font-medium hover:text-white transition-colors ${currentView === 'dashboard' ? 'text-white' : 'text-slate-400'}`}>Dashboard</button>
-          <button onClick={() => setCurrentView('libraries')} className={`text-sm font-medium hover:text-white transition-colors ${currentView === 'libraries' ? 'text-white' : 'text-slate-400'}`}>Libraries</button>
-          <div className="flex items-center gap-4 ml-4">
-            <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-primary">
-              <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop" alt="Profile" />
+      {!user ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-10">
+          <div className="flex items-center gap-4 mb-12">
+            <span className="text-primary text-8xl font-bold tracking-tighter">42</span>
+            <div className="flex flex-col leading-none">
+              <span className="text-3xl font-bold uppercase tracking-tight">Sprint</span>
+              <span className="text-3xl font-bold uppercase tracking-tight">Platform</span>
             </div>
           </div>
+          <div className="bg-card border border-border p-12 rounded-3xl shadow-2xl max-w-md w-full text-center">
+            <h2 className="text-2xl font-bold mb-4">Welcome back</h2>
+            <p className="text-slate-400 mb-8">Sign in with your Intra 42 account to manage sprints and track progress.</p>
+            <button
+              onClick={handleLogin}
+              className="w-full py-4 bg-primary hover:bg-opacity-90 rounded-2xl font-black text-lg transition-all shadow-lg flex items-center justify-center gap-3"
+            >
+              LOGIN WITH INTRA
+            </button>
+          </div>
         </div>
-      </nav>
+      ) : (
+        <>
+          <nav className="px-10 py-6 flex justify-between items-center sticky top-0 z-30 bg-background/80 backdrop-blur-md">
+            <div className="flex items-center gap-2">
+              <span className="text-primary text-5xl font-bold tracking-tighter">42</span>
+              <div className="flex flex-col leading-none">
+                <span className="text-xl font-bold uppercase tracking-tight">Sprint</span>
+                <span className="text-xl font-bold uppercase tracking-tight">Platform</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-8">
+              <button onClick={() => setCurrentView('dashboard')} className={`text-sm font-medium hover:text-white transition-colors ${currentView === 'dashboard' ? 'text-white' : 'text-slate-400'}`}>Dashboard</button>
+              <button onClick={() => setCurrentView('libraries')} className={`text-sm font-medium hover:text-white transition-colors ${currentView === 'libraries' ? 'text-white' : 'text-slate-400'}`}>Libraries</button>
+              <div className="flex items-center gap-4 ml-4 group relative">
+                <div className="flex items-center gap-3 cursor-pointer" onClick={handleLogout}>
+                  <div className="text-right hidden sm:block">
+                    <p className="text-xs font-bold">{user.name}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">{user.login}</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-primary">
+                    <img src={user.image_url} alt="Profile" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </nav>
 
 
-      <main className="flex-1 p-10 overflow-y-auto">
+          <main className="flex-1 p-10 overflow-y-auto">
         <div className="max-w-[1400px] mx-auto">
           {currentView === 'dashboard' ? (
              <div className="space-y-8">
@@ -1072,6 +1152,8 @@ function App() {
             </form>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   )
