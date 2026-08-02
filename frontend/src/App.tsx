@@ -558,7 +558,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-slate-200 font-sans flex flex-col">
+    <div className="h-screen bg-background text-slate-200 font-sans flex flex-col overflow-hidden">
       {!user ? (
         <div className="flex-1 flex flex-col items-center justify-center p-10">
           <div className="flex items-center gap-4 mb-12">
@@ -615,102 +615,121 @@ function App() {
           </nav>
 
 
-          <main className="flex-1 p-10 overflow-y-auto">
-        <div className="max-w-[1400px] mx-auto">
+          <main className={`flex-1 min-h-0 ${currentView === 'dashboard' ? '' : 'overflow-y-auto p-10'}`}>
+        <div className={currentView === 'dashboard' ? 'w-full h-full' : 'max-w-[1400px] mx-auto'}>
           {currentView === 'dashboard' ? (
-             <div className="space-y-8">
-                {/* Sprint Overview / Summary Card (Full Width) */}
-                <div className="tutor-card">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                      <BarChart3 className="text-rose-500" size={24} />
-                      <h2 className="text-xl font-bold">Sprint Overview</h2>
+             <div className="flex flex-col lg:flex-row h-full">
+                {/* Sprint Overview / Summary Column (Left Side) */}
+                <div className="lg:w-1/2 w-full h-full overflow-y-auto p-10 border-r border-border/50 custom-scrollbar">
+                  <div className="tutor-card">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-3">
+                        <BarChart3 className="text-rose-500" size={24} />
+                        <h2 className="text-xl font-bold">Sprint Overview</h2>
+                      </div>
+                      <div className="flex gap-4">
+                        {completionLevels.map(level => (
+                          <div key={level.id} className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: level.color }}></div>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase">{level.text}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex gap-4">
-                      {completionLevels.map(level => (
-                        <div key={level.id} className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: level.color }}></div>
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">{level.text}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                   {selectedSprint ? (
-                    <div className="overflow-x-auto rounded-lg border border-border">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-[#1c2333]">
-                            <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase sticky left-0 bg-[#1c2333] z-30 w-[180px]">Student</th>
-                            {getDatesInRange(selectedSprint.start_date, selectedSprint.end_date).map(date => (
-                              <th
-                                key={date}
-                                onClick={() => setCurrentDate(date)}
-                                className={`px-2 py-3 text-center min-w-[40px] transition-all relative cursor-pointer hover:bg-white/5 ${date === currentDate ? 'bg-primary/10 border-x border-primary z-10' : 'border-x border-border/50'}`}
-                              >
-                                <div className="text-[8px] font-mono text-slate-600">{new Date(date).toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                                <div className={`text-[10px] font-bold ${date === currentDate ? 'text-primary' : 'text-slate-500'}`}>{new Date(date).getDate()}</div>
-                              </th>
-                            ))}
-                            <th className="px-6 py-3 text-[10px] font-bold text-primary uppercase tracking-widest border-l border-border bg-[#1c2333] sticky right-0 z-30 w-px min-w-fit">Goal</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/50">
-                          {summaryData.map((student, sIdx) => (
-                            <tr key={student.id} className="hover:bg-slate-800/20 transition-colors">
-                              <td className="px-4 py-3 sticky left-0 bg-card z-30 cursor-pointer group/student" onClick={() => scrollToStudent(student.id)}>
-                                <div className="flex items-center gap-3">
-                                  <img src={student.image_url} className="w-6 h-6 rounded-md object-cover border border-transparent group-hover/student:border-primary transition-all" />
-                                  <p className="text-[11px] font-bold truncate max-w-[120px] group-hover/student:text-primary transition-colors">{student.name}</p>
-                                </div>
-                              </td>
-                              {getDatesInRange(selectedSprint.start_date, selectedSprint.end_date).map(date => {
-                                const color = student.days[date];
-                                return (
-                                  <td
+                    (() => {
+                      const allDates = getDatesInRange(selectedSprint.start_date, selectedSprint.end_date);
+                      const currentIndex = allDates.indexOf(currentDate);
+
+                      let start = Math.max(0, currentIndex - 2);
+                      let end = start + 5;
+
+                      if (end > allDates.length) {
+                        end = allDates.length;
+                        start = Math.max(0, end - 5);
+                      }
+
+                      const visibleDates = allDates.slice(start, end);
+
+                      return (
+                        <div className="overflow-x-auto rounded-lg border border-border">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-[#1c2333]">
+                                <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase sticky left-0 bg-[#1c2333] z-30 w-[180px]">Student</th>
+                                {visibleDates.map(date => (
+                                  <th
                                     key={date}
-                                    className={`p-0 text-center cursor-pointer transition-all relative hover:bg-white/5 ${date === currentDate ? `bg-primary/10 border-x border-primary z-10` : 'border-x border-border/10'}`}
-                                    onClick={() => {
-                                      setCurrentDate(date);
-                                      scrollToStudent(student.id);
-                                    }}
-                                    style={{ backgroundColor: color || undefined }}
+                                    onClick={() => setCurrentDate(date)}
+                                    className={`px-2 py-3 text-center min-w-[40px] transition-all relative cursor-pointer hover:bg-white/5 ${date === currentDate ? 'bg-primary/10 border-x border-primary z-10' : 'border-x border-border/50'}`}
                                   >
-                                    <div className="h-10 min-w-[40px] flex items-center justify-center">{!color && <div className="w-1 h-1 rounded-full bg-border"></div>}</div>
+                                    <div className="text-[8px] font-mono text-slate-600">{new Date(date).toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                                    <div className={`text-[10px] font-bold ${date === currentDate ? 'text-primary' : 'text-slate-500'}`}>{new Date(date).getDate()}</div>
+                                  </th>
+                                ))}
+                                <th className="px-6 py-3 text-[10px] font-bold text-primary uppercase tracking-widest border-l border-border bg-[#1c2333] sticky right-0 z-30 w-px min-w-fit">Goal</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/50">
+                              {summaryData.map((student, sIdx) => (
+                                <tr key={student.id} className="hover:bg-slate-800/20 transition-colors">
+                                  <td className="px-4 py-2 sticky left-0 bg-card z-30 cursor-pointer group/student" onClick={() => scrollToStudent(student.id)}>
+                                    <div className="flex items-center gap-2">
+                                      <img src={student.image_url} className="w-12 h-12 rounded-lg object-cover border border-transparent group-hover/student:border-primary transition-all" />
+                                      <p className="text-base font-bold truncate max-w-[120px] group-hover/student:text-primary transition-colors">{student.name.split(' ')[0]}</p>
+                                    </div>
                                   </td>
-                                );
-                              })}
-                              <td
-                                className={`p-0 text-center cursor-pointer transition-all border-l border-border relative group/goal sticky right-0 z-30 w-px min-w-fit ${student.is_goal_met ? 'bg-emerald-950' : 'bg-card'}`}
-                                onClick={() => {
-                                  setGoalForm({ studentId: student.id, studentName: student.name, goal: student.sprint_goal || '', isMet: student.is_goal_met || false });
-                                  setShowGoalModal(true);
-                                }}
-                              >
-                                <div className="h-10 px-4 flex items-center justify-start gap-3 whitespace-nowrap">
-                                  {student.is_goal_met ? <CheckCircle2 size={14} className="text-emerald-500 shrink-0" /> : <Circle size={14} className="text-slate-700 shrink-0" />}
-                                  <span className={`text-[10px] font-black uppercase tracking-tight ${student.is_goal_met ? 'text-emerald-400' : student.sprint_goal ? 'text-slate-300' : 'text-slate-700'}`}>
-                                    {student.sprint_goal
-                                      ? (student.sprint_goal.length > 50 ? student.sprint_goal.substring(0, 50) + '...' : student.sprint_goal)
-                                      : 'SET GOAL'}
-                                  </span>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                                  {visibleDates.map(date => {
+                                    const color = student.days[date];
+                                    return (
+                                      <td
+                                        key={date}
+                                        className={`p-0 text-center cursor-pointer transition-all relative hover:bg-white/5 ${date === currentDate ? `bg-primary/10 border-x border-primary z-10` : 'border-x border-border/10'}`}
+                                        onClick={() => {
+                                          setCurrentDate(date);
+                                          scrollToStudent(student.id);
+                                        }}
+                                        style={{ backgroundColor: color || undefined }}
+                                      >
+                                        <div className="h-16 min-w-[40px] flex items-center justify-center">{!color && <div className="w-1 h-1 rounded-full bg-border"></div>}</div>
+                                      </td>
+                                    );
+                                  })}
+                                  <td
+                                    className={`p-0 text-left cursor-pointer transition-all border-l border-border relative group/goal sticky right-0 z-30 w-[200px] ${student.is_goal_met ? 'bg-emerald-950' : 'bg-card'}`}
+                                    onClick={() => {
+                                      setGoalForm({ studentId: student.id, studentName: student.name, goal: student.sprint_goal || '', isMet: student.is_goal_met || false });
+                                      setShowGoalModal(true);
+                                    }}
+                                  >
+                                    <div className="min-h-[64px] py-4 px-4 flex items-start justify-start gap-3">
+                                      {student.is_goal_met ? <CheckCircle2 size={18} className="text-emerald-500 shrink-0 mt-0.5" /> : <Circle size={18} className="text-slate-700 shrink-0 mt-0.5" />}
+                                      <span className={`text-xs font-black uppercase tracking-tight leading-tight ${student.is_goal_met ? 'text-emerald-400' : student.sprint_goal ? 'text-slate-300' : 'text-slate-700'}`}>
+                                        {student.sprint_goal || 'SET GOAL'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div className="h-64 flex flex-col items-center justify-center text-slate-600 italic">
                       <BarChart3 className="mb-4 opacity-10" size={64}/>
                       <p>Select a sprint to see sprint overview.</p>
                     </div>
                   )}
+                  </div>
                 </div>
 
-                <div className="flex flex-col lg:flex-row gap-6">
-                  {/* Select Sprint Button */}
-                  <div className="lg:w-1/4">
+                {/* Right side: others elements */}
+                <div className="lg:w-1/2 w-full h-full overflow-y-auto p-10 space-y-8 custom-scrollbar">
+                  <div className="flex flex-col sm:flex-row gap-6">
+                    {/* Select Sprint Button */}
+                    <div className="sm:w-1/3">
                     <button
                       onClick={() => setShowSprintSelectionModal(true)}
                       className={`w-full h-full min-h-[100px] tutor-card transition-all flex items-center justify-start px-8 gap-5 group relative overflow-hidden ${selectedSprint ? 'border-primary/40 bg-primary/5' : 'hover:border-slate-500'}`}
@@ -727,7 +746,7 @@ function App() {
                   </div>
 
                   {/* Day Selector Card */}
-                  <div className="lg:flex-1">
+                  <div className="sm:flex-1">
                     {selectedSprint && (
                       <div className="tutor-card h-full flex flex-col justify-center">
                         <div className="flex items-center justify-between">
@@ -755,7 +774,7 @@ function App() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                       {dailyData.map(student => (
                         <div
                           key={student.student_id}
@@ -764,27 +783,26 @@ function App() {
                           style={{ borderColor: student.completion_color || '#1e293b' }}
                         >
                           <div className="flex items-start justify-between">
-                            <div className="flex items-center gap-4">
-                              <img src={student.image_url} alt={student.name} className="w-16 h-16 rounded-xl object-cover border-2 border-border shadow-md" />
+                            <div className="flex items-center gap-5">
+                              <img src={student.image_url} alt={student.name} className="w-24 h-24 rounded-2xl object-cover border-2 border-border shadow-md" />
                               <div className="min-w-0">
-                                <h4 className="font-bold text-lg truncate text-slate-100">{student.name}</h4>
-                                <p className="text-xs text-slate-500 font-mono mb-2">{student.login}</p>
+                                <h4 className="font-black text-2xl truncate text-slate-100">{student.name}</h4>
+                                <p className="text-sm text-slate-500 font-mono mb-3">{student.login}</p>
                                 <button
                                   onClick={() => { setUpdatingProjectIdFor(student.student_id); setProjectSearch(''); setShowProjectUpdateModal(true); }}
-                                  className="text-[11px] font-bold uppercase px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors truncate max-w-full"
+                                  className="text-xs font-bold uppercase px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors truncate max-w-full"
                                 >
                                   {student.project_name || 'Select Project'}
                                 </button>
                               </div>
                             </div>
-                            <button onClick={() => removeFromSprint(student.student_id)} className="text-slate-600 hover:text-rose-500 transition-colors"><Trash2 size={18}/></button>
+                            <button onClick={() => removeFromSprint(student.student_id)} className="text-slate-600 hover:text-rose-500 transition-colors"><Trash2 size={20}/></button>
                           </div>
 
                           <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Today's Objective</label>
                             <textarea
-                              placeholder="What is the objective for today?"
-                              className="w-full bg-card border border-border rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-primary transition-all min-h-[100px] text-slate-200"
+                              placeholder="..."
+                              className="w-full bg-card border border-border rounded-xl px-4 py-3 text-lg focus:outline-none focus:border-primary transition-all min-h-[100px] text-slate-200"
                               style={student.completion_color && student.completion_text === 'Done' ? { textDecoration: 'line-through', opacity: 0.5, fontStyle: 'italic' } : {}}
                               value={student.objective || ''}
                               onChange={(e) => setDailyData(dailyData.map(d => d.student_id === student.student_id ? {...d, objective: e.target.value} : d))}
@@ -811,6 +829,7 @@ function App() {
                     </div>
                   </div>
                 )}
+              </div>
              </div>
           ) : currentView === 'libraries' ? (
             <div className="space-y-8">
