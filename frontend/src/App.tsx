@@ -496,17 +496,25 @@ function App() {
 
                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                           {dailyData.map(student => (
-                            <div key={student.student_id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-4 shadow-lg group hover:border-slate-700 transition-colors relative">
+                            <div
+                              key={student.student_id}
+                              className="border rounded-2xl p-4 flex flex-col gap-4 shadow-lg transition-all relative group"
+                              style={{
+                                backgroundColor: student.completion_color ? `${student.completion_color}10` : '#0f172a',
+                                borderColor: student.completion_color ? `${student.completion_color}30` : '#1e293b'
+                              }}
+                            >
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4">
                                   <img src={student.image_url} alt={student.name} className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md" />
                                   <div>
-                                    <h4 className="font-bold text-sm truncate max-w-[140px]">{student.name}</h4>
+                                    <h4 className="font-bold text-sm truncate max-w-[140px] text-slate-100">{student.name}</h4>
                                     <div className="flex flex-col">
                                       <span className="text-[10px] text-slate-500 font-mono">{student.login}</span>
                                       <button
                                         onClick={() => { setUpdatingProjectIdFor(student.student_id); setProjectSearch(''); setShowProjectUpdateModal(true); }}
-                                        className="text-[10px] text-purple-400 font-bold uppercase hover:text-purple-300 transition-colors text-left mt-0.5 max-w-[150px] truncate"
+                                        className="text-[10px] font-bold uppercase hover:opacity-70 transition-colors text-left mt-0.5 max-w-[150px] truncate"
+                                        style={{ color: student.completion_color || '#a855f7' }}
                                       >
                                         {student.project_name || 'Select Project'}
                                       </button>
@@ -514,14 +522,32 @@ function App() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <select className="px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border outline-none cursor-pointer" style={{ backgroundColor: student.completion_color ? `${student.completion_color}1a` : '#1e293b', borderColor: student.completion_color ? `${student.completion_color}50` : '#334155', color: student.completion_color || '#94a3b8' }} value={student.completion_level_id || 0} onChange={(e) => updateObjective(student.student_id, student.objective || '', parseInt(e.target.value))}>
+                                  <select
+                                    className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border outline-none cursor-pointer`}
+                                    style={{
+                                      backgroundColor: student.completion_color ? `${student.completion_color}25` : '#1e293b',
+                                      borderColor: student.completion_color ? `${student.completion_color}50` : '#334155',
+                                      color: student.completion_color || '#94a3b8'
+                                    }}
+                                    value={student.completion_level_id || 0}
+                                    onChange={(e) => updateObjective(student.student_id, student.objective || '', parseInt(e.target.value))}
+                                  >
                                     <option value="0" className="bg-slate-900 text-slate-400">Level</option>
-                                    {completionLevels.map(cl => (<option key={cl.id} value={cl.id} className="bg-slate-900" style={{ color: cl.color }}>{cl.text}</option>))}
+                                    {completionLevels.map(cl => (
+                                      <option key={cl.id} value={cl.id} className="bg-slate-900" style={{ color: cl.color }}>{cl.text}</option>
+                                    ))}
                                   </select>
                                   <button onClick={() => removeFromSprint(student.student_id)} className="p-2.5 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all border border-transparent hover:border-rose-500/20"><UserMinus size={18}/></button>
                                 </div>
                               </div>
-                              <textarea placeholder="Write objective..." className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 transition-all min-h-[80px]" style={student.completion_color && student.completion_text === 'Done' ? { textDecoration: 'line-through', color: '#64748b', fontStyle: 'italic' } : {}} value={student.objective || ''} onChange={(e) => setDailyData(dailyData.map(d => d.student_id === student.student_id ? {...d, objective: e.target.value} : d))} onBlur={(e) => updateObjective(student.student_id, e.target.value, student.completion_level_id)} />
+                              <textarea
+                                placeholder="Write objective..."
+                                className="w-full bg-slate-950/50 border border-slate-800/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 transition-all min-h-[80px] text-slate-200"
+                                style={student.completion_color && student.completion_text === 'Done' ? { textDecoration: 'line-through', opacity: 0.5, fontStyle: 'italic' } : {}}
+                                value={student.objective || ''}
+                                onChange={(e) => setDailyData(dailyData.map(d => d.student_id === student.student_id ? {...d, objective: e.target.value} : d))}
+                                onBlur={(e) => updateObjective(student.student_id, e.target.value, student.completion_level_id)}
+                              />
                             </div>
                           ))}
                         </div>
