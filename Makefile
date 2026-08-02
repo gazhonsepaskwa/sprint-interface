@@ -1,5 +1,9 @@
 # Variables
 COMPOSE = docker-compose
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
 
 .PHONY: help up down restart logs ps build clean db-shell
 
@@ -39,5 +43,5 @@ frontend-shell: ## Access the frontend container shell
 	docker exec -it sprint_frontend sh
 
 status: ## Show status of all services with health checks
-	@echo "Checking system status..."
-	@curl -s http://localhost:5001/api/health || echo "Backend unreachable at :5001"
+	@echo "Checking system status on port ${EXTERNAL_PORT}..."
+	@curl -s http://localhost:${EXTERNAL_PORT}/api/health || echo "System unreachable at :${EXTERNAL_PORT}"

@@ -28,7 +28,8 @@ services:
       - DB_NAME=sprint_db
       - DB_PORT=5432
       - PORT=5001
-      - FRONTEND_URL=http://localhost
+      - FRONTEND_URL=https://${DOMAIN}
+      - FORTYTWO_APP_REDIRECT_URI=https://${DOMAIN}/api/auth/42/callback
     depends_on:
       - db
 
@@ -37,6 +38,9 @@ services:
     container_name: sprint_frontend
     expose:
       - "3000"
+    environment:
+      - VITE_ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - VITE_DOMAIN=${DOMAIN}
     depends_on:
       - backend
 

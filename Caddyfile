@@ -5,7 +5,10 @@
 :80 {
     # Proxy API requests to the backend
     handle /api/* {
-        reverse_proxy backend:5001
+        reverse_proxy backend:5001 {
+            # Trust the headers from the main Caddy
+            header_up X-Forwarded-Proto {header.X-Forwarded-Proto}
+        }
     }
 
     # Proxy everything else to the frontend
