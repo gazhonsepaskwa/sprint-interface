@@ -354,7 +354,15 @@ app.delete('/api/whitelist/:id', requireAuth, async (req: any, res) => {
   if (!req.user?.is_superuser) return res.status(403).json({ error: 'Superuser access required' });
 
   const { id } = req.params;
+  const SUPERUSER = (process.env.SUPERUSER_LOGIN || 'nalebrun').trim().toLowerCase();
+
   try {
+    // Check if the user is the superuser
+    const userCheck = await pool.query('SELECT login FROM whitelist WHERE id = $1', [id]);
+    if (userCheck.rows.length > 0 && userCheck.rows[0].login.toLowerCase() === SUPERUSER) {
+      return res.status(400).json({ error: 'The Superuser cannot be removed from the whitelist' });
+    }
+
     await pool.query('DELETE FROM whitelist WHERE id = $1', [id]);
     res.json({ message: 'Removed from whitelist' });
   } catch (err) {

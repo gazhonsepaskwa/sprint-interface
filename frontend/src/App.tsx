@@ -936,12 +936,14 @@ function App() {
                           <p className="text-[10px] text-slate-500 font-mono">Added {new Date(entry.created_at).toLocaleDateString()}</p>
                         </div>
                       </div>
-                      <button
-                        onClick={() => removeFromWhitelist(entry.id)}
-                        className="p-2 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      {entry.login.toLowerCase() !== user?.login.toLowerCase() && (
+                        <button
+                          onClick={() => removeFromWhitelist(entry.id)}
+                          className="p-2 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      )}
                     </div>
                   ))}
                   {whitelist.length === 0 && (
