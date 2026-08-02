@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Calendar, UserPlus, Users, Briefcase, ChevronRight, Trash2, ChevronLeft, CheckCircle2, Circle, LayoutDashboard, Settings2, UserMinus, Palette, BarChart3, Edit3 } from 'lucide-react'
+import { Plus, Calendar, UserPlus, Users, Briefcase, ChevronRight, Trash2, ChevronLeft, CheckCircle2, Circle, LayoutDashboard, Settings2, UserMinus, Palette, BarChart3, Edit3, RefreshCcw, Search } from 'lucide-react'
 
 interface Sprint {
   id: number;
@@ -64,6 +64,8 @@ function App() {
   const [currentDate, setCurrentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [dailyData, setDailyData] = useState<DailyData[]>([]);
   const [summaryData, setSummaryData] = useState<SprintSummaryStudent[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
   const [showSprintModal, setShowSprintModal] = useState(false);
   const [showStudentModal, setShowStudentModal] = useState(false);
@@ -221,6 +223,23 @@ function App() {
     }
   };
 
+  const sync42Students = async () => {
+    if (!confirm('Sync all students from 42 Belgium? This may take a minute.')) return;
+    setSyncing(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/students/sync-42`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
+      alert(data.message);
+      await fetchData();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to sync: ' + (err as Error).message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const enrollOrUpdateStudent = async (studentId: number, projectId: number, isModal = false) => {
     if (!selectedSprint || studentId === 0 || projectId === 0) return;
     try {
@@ -280,6 +299,17 @@ function App() {
     if (!confirm('Permanently delete this student from library?')) return;
     await fetch(`${API_BASE}/api/students/${id}`, { method: 'DELETE' });
     fetchData();
+  };
+
+  const handleDropAllStudents = async () => {
+    if (!confirm('DANGER: Permanently delete ALL students from the library and all sprints? This cannot be undone.')) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/students`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to drop students');
+      await fetchData();
+    } catch (err) {
+      alert('Error dropping students.');
+    }
   };
 
   const handleDeleteProject = async (id: number) => {
@@ -345,6 +375,16 @@ function App() {
              <button onClick={() => { setEditingId(null); setShowSprintModal(true); }} className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-bold text-xs"><Plus size={16} className="inline mr-1"/> NEW SPRINT</button>
           ) : (
             <>
+              <div className="relative mr-4">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Search library..."
+                  className="bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-4 py-2 text-xs outline-none focus:border-purple-500 transition-all w-[240px]"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
               <button onClick={() => { setEditingId(null); setStudentForm({name:'', login:'', imageUrl:''}); setShowStudentModal(true); }} className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg font-bold text-xs"><Plus size={16} className="inline mr-1"/> STUDENT</button>
               <button onClick={() => { setEditingId(null); setProjectForm({name:'', description:''}); setShowProjectModal(true); }} className="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-lg font-bold text-xs"><Plus size={16} className="inline mr-1"/> PROJECT</button>
               <button onClick={() => { setEditingId(null); setLevelForm({text:'', color:'#475569'}); setShowLevelModal(true); }} className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg font-bold text-xs"><Plus size={16} className="inline mr-1"/> LEVEL</button>
@@ -472,9 +512,38 @@ function App() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
-                <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-blue-400">Student Library</h2>
+                <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-3">
+                    <Users className="text-blue-400" size={24} />
+                    <h2 className="text-xl font-bold uppercase tracking-widest text-sm text-blue-400">Student Library</h2>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={sync42Students}
+                      disabled={syncing}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all border ${syncing ? 'bg-slate-800 text-slate-500 border-slate-700' : 'bg-blue-600/10 text-blue-400 border-blue-600/30 hover:bg-blue-600/20'}`}
+                    >
+                      <RefreshCcw size={14} className={syncing ? 'animate-spin' : ''} />
+                      {syncing ? 'SYNCING...' : 'SYNC WITH 42 BELGIUM'}
+                    </button>
+                    <button
+                      onClick={handleDropAllStudents}
+                      className="bg-rose-600/10 text-rose-500 border border-rose-600/30 hover:bg-rose-600/20 px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2"
+                    >
+                      <Trash2 size={14} /> DROP ALL
+                    </button>
+                    <button onClick={() => { setEditingId(null); setStudentForm({name:'', login:'', imageUrl:''}); setShowStudentModal(true); }} className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2">
+                      <Plus size={16} /> ADD NEW
+                    </button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                  {students.map(student => (
+                  {students
+                    .filter(s =>
+                      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      s.login.toLowerCase().includes(searchTerm.toLowerCase())
+                    )
+                    .map(student => (
                     <div key={student.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-blue-500 transition-all relative">
                       <img src={student.image_url} className="w-16 h-16 rounded-2xl object-cover mb-3 border-2 border-slate-800 group-hover:border-blue-500 transition-all" />
                       <p className="text-sm font-bold truncate w-full">{student.name}</p>
@@ -491,7 +560,9 @@ function App() {
                 <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
                   <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-purple-400">Project Library</h2>
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                    {projects.map(project => (
+                    {projects
+                      .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .map(project => (
                       <div key={project.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-purple-500 transition-all relative">
                         <div className="w-16 h-16 rounded-2xl bg-slate-900 flex items-center justify-center mb-3 border-2 border-slate-800 group-hover:border-purple-500 transition-all"><Briefcase size={24} className="text-slate-500"/></div>
                         <p className="text-sm font-bold truncate w-full">{project.name}</p>

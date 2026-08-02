@@ -1,0 +1,63 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# TypeScript v1-v2 build artifacts
+shard.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+backend/.env
+
+# dist and build outputs
+dist/
+build/
+frontend/dist/
+backend/dist/
+
+# OS X
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+.docker/
+
+# Local data (Postgres volumes should usually be outside or ignored)
+pg_data/
+postgres_data/

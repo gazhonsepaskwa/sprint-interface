@@ -1,6 +1,10 @@
 import express from 'express';
 import { Pool } from 'pg';
 import cors from 'cors';
+import axios from 'axios';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -182,6 +186,82 @@ app.delete('/api/sprints/:id', async (req, res) => {
 });
 
 // Student Routes
+// Student Routes
+app.post('/api/students/sync-42', async (req, res) => {
+  const UID = process.env.FORTYTWO_APP_ID;
+  const SECRET = process.env.FORTYTWO_APP_SECRET;
+  const CAMPUS_ID = process.env.FORTYTWO_CAMPUS_ID || '52'; // Default to 42 Brussels
+
+  if (!UID || !SECRET) {
+    return res.status(500).json({ error: '42 API credentials missing in .env' });
+  }
+
+  try {
+    // 1. Get OAuth Token
+    const authRes = await axios.post('https://api.intra.42.fr/oauth/token', {
+      grant_type: 'client_credentials',
+      client_id: UID,
+      client_secret: SECRET
+    });
+    const token = authRes.data.access_token;
+
+    let page = 1;
+    let allUsers: any[] = [];
+    let hasMore = true;
+
+    // 2. Fetch users from Belgian Campus
+    while (hasMore) {
+      console.log(`Fetching page ${page} from 42 API...`);
+      const usersRes = await axios.get(`https://api.intra.42.fr/v2/campus/${CAMPUS_ID}/users`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          'page[size]': 100,
+          'page[number]': page
+        }
+      });
+
+      const users = usersRes.data;
+      if (users.length === 0) {
+        hasMore = false;
+      } else {
+        allUsers = [...allUsers, ...users];
+        page++;
+      }
+
+      // Safety break to avoid infinite loops if API behaves unexpectedly
+      if (page > 50) hasMore = false;
+    }
+
+    console.log(`Syncing ${allUsers.length} students to database...`);
+
+    // 3. Insert into DB
+    let syncedCount = 0;
+    for (const user of allUsers) {
+      // Skip users who are not active students (e.g. blackholed or staff)
+      if (user['active?'] === false || user.kind !== 'student') {
+        continue;
+      }
+
+      // Standardize data: handle missing images
+      const imageUrl = user.image?.versions?.medium || user.image?.link || '';
+      const fullName = user.displayname || user.login;
+
+      await pool.query(`
+        INSERT INTO students (name, login, image_url)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (login)
+        DO UPDATE SET name = EXCLUDED.name, image_url = EXCLUDED.image_url
+      `, [fullName, user.login, imageUrl]);
+      syncedCount++;
+    }
+
+    res.json({ message: `Successfully synced ${syncedCount} active students.` });
+  } catch (err) {
+    console.error('42 Sync Error:', (err as any).response?.data || (err as Error).message);
+    res.status(500).json({ error: 'Failed to sync with 42 API' });
+  }
+});
+
 app.post('/api/students', async (req, res) => {
   const { name, login, imageUrl } = req.body;
   try {
@@ -199,6 +279,17 @@ app.get('/api/students', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM students ORDER BY name ASC');
     res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/students', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM daily_objectives');
+    await pool.query('DELETE FROM sprint_students');
+    await pool.query('DELETE FROM students');
+    res.json({ message: 'All students deleted' });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
