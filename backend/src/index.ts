@@ -131,6 +131,17 @@ const initDb = async () => {
           ALTER TABLE sprint_students ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL;
         END IF;
       END $$;
+
+      -- Migration: Add sprint_goal and is_goal_met to sprint_students
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sprint_students' AND column_name='sprint_goal') THEN
+          ALTER TABLE sprint_students ADD COLUMN sprint_goal TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sprint_students' AND column_name='is_goal_met') THEN
+          ALTER TABLE sprint_students ADD COLUMN is_goal_met BOOLEAN DEFAULT FALSE;
+        END IF;
+      END $$;
     `);
     console.log('Database tables initialized');
   } catch (err) {
@@ -587,7 +598,9 @@ app.get('/api/sprints/:sprintId/summary', async (req, res) => {
         s.login,
         s.image_url,
         obj.date,
-        cl.color as completion_color
+        cl.color as completion_color,
+        ss.sprint_goal,
+        ss.is_goal_met
       FROM students s
       JOIN sprint_students ss ON s.id = ss.student_id
       LEFT JOIN daily_objectives obj ON s.id = obj.student_id AND obj.sprint_id = ss.sprint_id
@@ -604,6 +617,8 @@ app.get('/api/sprints/:sprintId/summary', async (req, res) => {
           name: row.name,
           login: row.login,
           image_url: row.image_url,
+          sprint_goal: row.sprint_goal,
+          is_goal_met: row.is_goal_met,
           days: {}
         };
       }
@@ -614,6 +629,21 @@ app.get('/api/sprints/:sprintId/summary', async (req, res) => {
     });
 
     res.json(Object.values(studentsMap));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Update sprint goal
+app.post('/api/sprints/:sprintId/students/:studentId/goal', async (req, res) => {
+  const { sprintId, studentId } = req.params;
+  const { goal, isMet } = req.body;
+  try {
+    await pool.query(
+      'UPDATE sprint_students SET sprint_goal = $1, is_goal_met = $2 WHERE sprint_id = $3 AND student_id = $4',
+      [goal, isMet, sprintId, studentId]
+    );
+    res.json({ message: 'Sprint goal updated' });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

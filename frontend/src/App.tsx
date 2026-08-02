@@ -50,6 +50,8 @@ interface SprintSummaryStudent {
   login: string;
   image_url: string;
   days: { [date: string]: string };
+  sprint_goal?: string;
+  is_goal_met?: boolean;
 }
 
 type View = 'dashboard' | 'libraries';
@@ -78,6 +80,7 @@ function App() {
   const [showLevelModal, setShowLevelModal] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [showProjectUpdateModal, setShowProjectUpdateModal] = useState(false);
+  const [showGoalModal, setShowGoalModal] = useState(false);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [updatingProjectIdFor, setUpdatingProjectIdFor] = useState<number | null>(null);
@@ -87,6 +90,7 @@ function App() {
   const [projectForm, setProjectForm] = useState({ name: '', description: '' });
   const [levelForm, setLevelForm] = useState({ text: '', color: '#475569' });
   const [enrollForm, setEnrollForm] = useState({ studentId: 0, projectId: 0 });
+  const [goalForm, setGoalForm] = useState({ studentId: 0, studentName: '', goal: '', isMet: false });
 
   const formatDate = (date: string | Date) => {
     return new Date(date).toISOString().split('T')[0];
@@ -261,6 +265,23 @@ function App() {
       alert('Failed to sync: ' + (err as Error).message);
     } finally {
       setSyncingStudents(false);
+    }
+  };
+
+  const handleGoalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSprint) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/sprints/${selectedSprint.id}/students/${goalForm.studentId}/goal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goal: goalForm.goal, isMet: goalForm.isMet }),
+      });
+      if (!res.ok) throw new Error('Failed to update goal');
+      setShowGoalModal(false);
+      fetchSummaryData();
+    } catch (err) {
+      alert('Error updating goal');
     }
   };
 
@@ -473,6 +494,7 @@ function App() {
                                     <div className={`text-[10px] font-bold ${date === currentDate ? 'text-blue-400 underline decoration-2' : 'text-slate-500'}`}>{new Date(date).getDate()}</div>
                                   </th>
                                 ))}
+                                <th className="px-6 py-3 text-[10px] font-bold text-blue-400 uppercase tracking-widest border-l-4 border-slate-800 bg-slate-950/50">Sprint Goal</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/50">
@@ -487,11 +509,26 @@ function App() {
                                   {getDatesInRange(selectedSprint.start_date, selectedSprint.end_date).map(date => {
                                     const color = student.days[date];
                                     return (
-                                      <td key={date} className={`p-0 text-center cursor-pointer transition-all border-r border-slate-800/30 ${date === currentDate ? 'ring-2 ring-blue-500 ring-inset z-10 relative' : ''}`} onClick={() => setCurrentDate(date)} style={{ backgroundColor: color || 'transparent' }}>
-                                        <div className="h-10 min-w-[40px] flex items-center justify-center">{!color && <div className="w-1.5 h-1.5 rounded-full bg-slate-800"></div>}</div>
+                                      <td key={date} className={`p-0 text-center cursor-pointer transition-all border-r border-slate-800/10 ${date === currentDate ? 'ring-2 ring-blue-500 ring-inset z-10 relative' : ''}`} onClick={() => setCurrentDate(date)} style={{ backgroundColor: color || 'transparent' }}>
+                                        <div className="h-10 min-w-[40px] flex items-center justify-center">{!color && <div className="w-1 h-1 rounded-full bg-slate-800"></div>}</div>
                                       </td>
                                     );
                                   })}
+                                  <td
+                                    className={`p-0 text-center cursor-pointer transition-all border-l-4 border-slate-800 relative group/goal`}
+                                    style={{ backgroundColor: student.is_goal_met ? '#10b98115' : '#0f172a' }}
+                                    onClick={() => {
+                                      setGoalForm({ studentId: student.id, studentName: student.name, goal: student.sprint_goal || '', isMet: student.is_goal_met || false });
+                                      setShowGoalModal(true);
+                                    }}
+                                  >
+                                    <div className="h-10 px-4 flex items-center justify-start gap-3 overflow-hidden min-w-[180px]">
+                                      {student.is_goal_met ? <CheckCircle2 size={14} className="text-emerald-500 shrink-0" /> : <Circle size={14} className="text-slate-700 shrink-0" />}
+                                      <span className={`text-[10px] font-black truncate uppercase tracking-tight ${student.is_goal_met ? 'text-emerald-400' : student.sprint_goal ? 'text-slate-300' : 'text-slate-700'}`}>
+                                        {student.sprint_goal || 'CLICK TO SET GOAL'}
+                                      </span>
+                                    </div>
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -940,6 +977,58 @@ function App() {
                   </button>
                 ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showGoalModal && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) closeAllModals(); }}
+        >
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-8">
+              <div>
+                <h2 className="text-2xl font-black text-blue-400 uppercase tracking-tighter italic">Sprint Goal</h2>
+                <p className="text-xs text-slate-500 font-bold uppercase">{goalForm.studentName}</p>
+              </div>
+              <button onClick={() => setShowGoalModal(false)} className="text-slate-500 hover:text-white transition-colors">
+                <X size={28} />
+              </button>
+            </div>
+
+            <form onSubmit={handleGoalSubmit} className="space-y-6">
+              <div>
+                <label className="block text-[10px] font-black text-slate-600 uppercase mb-2 tracking-[0.2em]">Objective Description</label>
+                <textarea
+                  required
+                  placeholder="e.g. Finish all mandatory tasks and bonus part 1"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-sm focus:outline-none focus:border-blue-500 transition-all min-h-[120px] shadow-inner"
+                  value={goalForm.goal}
+                  onChange={e => setGoalForm({...goalForm, goal: e.target.value})}
+                />
+              </div>
+
+              <div
+                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between group ${goalForm.isMet ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-slate-950 border-slate-800 hover:border-slate-700'}`}
+                onClick={() => setGoalForm({...goalForm, isMet: !goalForm.isMet})}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${goalForm.isMet ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-500'}`}>
+                    <CheckCircle2 size={20} />
+                  </div>
+                  <div>
+                    <p className={`font-bold text-sm ${goalForm.isMet ? 'text-emerald-400' : 'text-slate-400'}`}>Goal Completed</p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">Toggle sprint success</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button type="button" onClick={() => setShowGoalModal(false)} className="flex-1 py-4 text-slate-500 font-black uppercase text-xs tracking-widest hover:text-white transition-colors">Discard</button>
+                <button type="submit" className="flex-[2] py-4 bg-blue-600 hover:bg-blue-500 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-blue-900/40 transition-all">Save Goal</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
