@@ -17,8 +17,8 @@ services:
   backend:
     build: ./backend
     container_name: sprint_backend
-    ports:
-      - "5001:5001"
+    expose:
+      - "5001"
     env_file:
       - ./backend/.env
     environment:
@@ -28,18 +28,33 @@ services:
       - DB_NAME=sprint_db
       - DB_PORT=5432
       - PORT=5001
+      - FRONTEND_URL=http://localhost
     depends_on:
       - db
 
   frontend:
     build: ./frontend
     container_name: sprint_frontend
-    ports:
-      - "3000:3000"
-    environment:
-      - VITE_API_URL=http://localhost:5001
+    expose:
+      - "3000"
     depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: sprint_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
       - backend
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:

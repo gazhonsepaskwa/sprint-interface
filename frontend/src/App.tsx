@@ -73,7 +73,7 @@ interface WhitelistEntry {
 type View = 'dashboard' | 'libraries' | 'whitelist';
 
 function App() {
-  const API_BASE = `http://${window.location.hostname}:5001`;
+  const API_BASE = ''; // Use relative paths since we're behind a reverse proxy
 
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
