@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Calendar, UserPlus, Users, Briefcase, ChevronRight, Trash2, ChevronLeft, CheckCircle2, Circle, LayoutDashboard, Settings2, UserMinus, Palette, BarChart3, Edit3, RefreshCcw, Search } from 'lucide-react'
+import { Plus, Calendar, UserPlus, Users, Briefcase, ChevronRight, Trash2, ChevronLeft, CheckCircle2, Circle, LayoutDashboard, Settings2, UserMinus, Palette, BarChart3, Edit3, RefreshCcw, Search, X } from 'lucide-react'
 
 interface Sprint {
   id: number;
@@ -65,6 +65,8 @@ function App() {
   const [dailyData, setDailyData] = useState<DailyData[]>([]);
   const [summaryData, setSummaryData] = useState<SprintSummaryStudent[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [enrollSearch, setEnrollSearch] = useState('');
+  const [projectSearch, setProjectSearch] = useState('');
   const [syncing, setSyncing] = useState(false);
 
   const [showSprintModal, setShowSprintModal] = useState(false);
@@ -72,8 +74,10 @@ function App() {
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showLevelModal, setShowLevelModal] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [showProjectUpdateModal, setShowProjectUpdateModal] = useState(false);
 
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [updatingProjectIdFor, setUpdatingProjectIdFor] = useState<number | null>(null);
 
   const [sprintForm, setSprintForm] = useState({ name: '', startDate: '', endDate: '' });
   const [studentForm, setStudentForm] = useState({ name: '', login: '', imageUrl: '' });
@@ -356,6 +360,16 @@ function App() {
   const isFirstDay = selectedSprint && currentDate <= formatDate(selectedSprint.start_date);
   const isLastDay = selectedSprint && currentDate >= formatDate(selectedSprint.end_date);
 
+  const closeAllModals = () => {
+    setShowSprintModal(false);
+    setShowStudentModal(false);
+    setShowProjectModal(false);
+    setShowLevelModal(false);
+    setShowEnrollModal(false);
+    setShowProjectUpdateModal(false);
+    setEditingId(null);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col">
       <nav className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex justify-between items-center sticky top-0 z-30 shadow-lg">
@@ -475,6 +489,11 @@ function App() {
                           <button disabled={isLastDay} onClick={() => changeDay(1)} className={`p-2 rounded-lg ${isLastDay ? 'text-slate-800' : 'text-slate-400 hover:bg-slate-800'}`}><ChevronRight size={24}/></button>
                         </div>
 
+                        <div className="flex justify-between items-center px-2">
+                          <h3 className="font-bold text-slate-400 uppercase text-xs tracking-wider">Sprinters</h3>
+                          <button onClick={() => { setEnrollSearch(''); setProjectSearch(''); setEnrollForm({studentId: 0, projectId: 0}); setShowEnrollModal(true); }} className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1"><UserPlus size={14}/> ENROLL STUDENT</button>
+                        </div>
+
                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                           {dailyData.map(student => (
                             <div key={student.student_id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-4 shadow-lg group hover:border-slate-700 transition-colors relative">
@@ -485,10 +504,12 @@ function App() {
                                     <h4 className="font-bold text-sm truncate max-w-[140px]">{student.name}</h4>
                                     <div className="flex flex-col">
                                       <span className="text-[10px] text-slate-500 font-mono">{student.login}</span>
-                                      <select className="text-[10px] text-purple-400 font-bold uppercase bg-transparent border-none outline-none cursor-pointer mt-0.5 max-w-[150px] truncate" value={student.project_id || 0} onChange={(e) => enrollOrUpdateStudent(student.student_id, parseInt(e.target.value), false)}>
-                                        <option value="0" className="bg-slate-900">Select Project</option>
-                                        {projects.map(p => <option key={p.id} value={p.id} className="bg-slate-900">{p.name.length > 20 ? p.name.substring(0, 17) + '...' : p.name}</option>)}
-                                      </select>
+                                      <button
+                                        onClick={() => { setUpdatingProjectIdFor(student.student_id); setProjectSearch(''); setShowProjectUpdateModal(true); }}
+                                        className="text-[10px] text-purple-400 font-bold uppercase hover:text-purple-300 transition-colors text-left mt-0.5 max-w-[150px] truncate"
+                                      >
+                                        {student.project_name || 'Select Project'}
+                                      </button>
                                     </div>
                                   </div>
                                 </div>
@@ -596,11 +617,266 @@ function App() {
       </main>
 
       {/* Modals */}
-      {showSprintModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-blue-400">New Sprint</h2><form onSubmit={handleCreateSprint} className="space-y-4"><input type="text" placeholder="Name" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-blue-500" onChange={e => setSprintForm({...sprintForm, name: e.target.value})}/><input type="date" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-blue-500" onChange={e => setSprintForm({...sprintForm, startDate: e.target.value})}/><input type="date" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-blue-500" onChange={e => setSprintForm({...sprintForm, endDate: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowSprintModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-blue-600 rounded-xl font-bold">Create</button></div></form></div></div>}
-      {showStudentModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-emerald-400">{editingId ? 'Edit' : 'Add'} Student</h2><form onSubmit={handleStudentSubmit} className="space-y-4"><input type="text" placeholder="Full Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-emerald-500" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})}/><input type="text" placeholder="Login" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-emerald-500" value={studentForm.login} onChange={e => setStudentForm({...studentForm, login: e.target.value})}/><input type="url" placeholder="Image URL" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-emerald-500" value={studentForm.imageUrl} onChange={e => setStudentForm({...studentForm, imageUrl: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => { setShowStudentModal(false); setEditingId(null); }} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-emerald-600 rounded-xl font-bold">Save</button></div></form></div></div>}
-      {showProjectModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-purple-400">{editingId ? 'Edit' : 'New'} Project</h2><form onSubmit={handleProjectSubmit} className="space-y-4"><input type="text" placeholder="Project Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-purple-500" value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})}/><textarea placeholder="Description" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 min-h-[100px] outline-none focus:border-purple-500" value={projectForm.description} onChange={e => setProjectForm({...projectForm, description: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => { setShowProjectModal(false); setEditingId(null); }} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-purple-600 rounded-xl font-bold">Save</button></div></form></div></div>}
-      {showLevelModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-amber-400">{editingId ? 'Edit' : 'New'} Level</h2><form onSubmit={handleLevelSubmit} className="space-y-4"><input type="text" placeholder="Text" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-amber-500" value={levelForm.text} onChange={e => setLevelForm({...levelForm, text: e.target.value})}/><input type="color" className="w-full h-10 cursor-pointer" value={levelForm.color} onChange={e => setLevelForm({...levelForm, color: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => { setShowLevelModal(false); setEditingId(null); }} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-amber-600 rounded-xl font-bold">Save</button></div></form></div></div>}
-      {showEnrollModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6">Enroll Student</h2><form onSubmit={(e) => { e.preventDefault(); enrollOrUpdateStudent(enrollForm.studentId, enrollForm.projectId, true); }} className="space-y-6"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Student</label><select required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 outline-none" value={enrollForm.studentId} onChange={e => setEnrollForm({...enrollForm, studentId: parseInt(e.target.value)})}><option value="0">Choose...</option>{students.map(s => (<option key={s.id} value={s.id}>{s.name}</option>))}</select></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Project</label><select required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 appearance-none outline-none" value={enrollForm.projectId} onChange={e => setEnrollForm({...enrollForm, projectId: parseInt(e.target.value)})}><option value="0">Choose...</option>{projects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowEnrollModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" disabled={enrollForm.studentId === 0 || enrollForm.projectId === 0} className="flex-1 py-3 bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 rounded-xl font-bold transition-all">Enroll</button></div></form></div></div>}
+      {showSprintModal && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) closeAllModals(); }}
+        >
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-blue-400">New Sprint</h2>
+              <button onClick={() => setShowSprintModal(false)} className="text-slate-500 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateSprint} className="space-y-4">
+              <input type="text" placeholder="Name" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-blue-500" onChange={e => setSprintForm({...sprintForm, name: e.target.value})}/>
+              <input type="date" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-blue-500" onChange={e => setSprintForm({...sprintForm, startDate: e.target.value})}/>
+              <input type="date" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-blue-500" onChange={e => setSprintForm({...sprintForm, endDate: e.target.value})}/>
+              <div className="flex gap-3 mt-8">
+                <button type="button" onClick={() => setShowSprintModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button>
+                <button type="submit" className="flex-1 py-3 bg-blue-600 rounded-xl font-bold">Create</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showStudentModal && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) closeAllModals(); }}
+        >
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-emerald-400">{editingId ? 'Edit' : 'Add'} Student</h2>
+              <button onClick={() => { setShowStudentModal(false); setEditingId(null); }} className="text-slate-500 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleStudentSubmit} className="space-y-4">
+              <input type="text" placeholder="Full Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-emerald-500" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})}/><input type="text" placeholder="Login" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-emerald-500" value={studentForm.login} onChange={e => setStudentForm({...studentForm, login: e.target.value})}/><input type="url" placeholder="Image URL" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-emerald-500" value={studentForm.imageUrl} onChange={e => setStudentForm({...studentForm, imageUrl: e.target.value})}/>
+              <div className="flex gap-3 mt-8">
+                <button type="button" onClick={() => { setShowStudentModal(false); setEditingId(null); }} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button>
+                <button type="submit" className="flex-1 py-3 bg-emerald-600 rounded-xl font-bold">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showProjectModal && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) closeAllModals(); }}
+        >
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-purple-400">{editingId ? 'Edit' : 'New'} Project</h2>
+              <button onClick={() => { setShowProjectModal(false); setEditingId(null); }} className="text-slate-500 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleProjectSubmit} className="space-y-4">
+              <input type="text" placeholder="Project Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-purple-500" value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})}/><textarea placeholder="Description" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 min-h-[100px] outline-none focus:border-purple-500" value={projectForm.description} onChange={e => setProjectForm({...projectForm, description: e.target.value})}/>
+              <div className="flex gap-3 mt-8">
+                <button type="button" onClick={() => { setShowProjectModal(false); setEditingId(null); }} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button>
+                <button type="submit" className="flex-1 py-3 bg-purple-600 rounded-xl font-bold">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showLevelModal && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) closeAllModals(); }}
+        >
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold mb-6 text-amber-400">{editingId ? 'Edit' : 'New'} Level</h2>
+              <button onClick={() => { setShowLevelModal(false); setEditingId(null); }} className="text-slate-500 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleLevelSubmit} className="space-y-4">
+              <input type="text" placeholder="Text" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none focus:border-amber-500" value={levelForm.text} onChange={e => setLevelForm({...levelForm, text: e.target.value})}/><input type="color" className="w-full h-10 cursor-pointer" value={levelForm.color} onChange={e => setLevelForm({...levelForm, color: e.target.value})}/>
+              <div className="flex gap-3 mt-8">
+                <button type="button" onClick={() => { setShowLevelModal(false); setEditingId(null); }} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button>
+                <button type="submit" className="flex-1 py-3 bg-amber-600 rounded-xl font-bold">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {showEnrollModal && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) closeAllModals(); }}
+        >
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-2xl p-8 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold">Enroll in {selectedSprint?.name || 'Sprint'}</h2>
+              <button onClick={() => setShowEnrollModal(false)} className="text-slate-500 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 mb-6 space-y-8">
+              {/* Student Selection Section */}
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest">1. Select Student</label>
+                  <div className="relative">
+                    <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Search students..."
+                      className="bg-slate-950 border border-slate-800 rounded-lg pl-7 pr-3 py-1.5 text-[10px] outline-none focus:border-blue-500 transition-all w-[150px]"
+                      value={enrollSearch}
+                      onChange={(e) => setEnrollSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {students
+                    .filter(s =>
+                      s.name.toLowerCase().includes(enrollSearch.toLowerCase()) ||
+                      s.login.toLowerCase().includes(enrollSearch.toLowerCase())
+                    )
+                    .map(student => (
+                      <button
+                        key={student.id}
+                        onClick={() => setEnrollForm({...enrollForm, studentId: student.id})}
+                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                          enrollForm.studentId === student.id
+                            ? 'bg-blue-600/20 border-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.2)]'
+                            : 'bg-slate-800/50 border-slate-700 hover:border-slate-500'
+                        }`}
+                      >
+                        <img src={student.image_url} className="w-10 h-10 rounded-lg object-cover shadow-md" alt="" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold truncate">{student.name}</p>
+                          <p className="text-[10px] text-slate-500 font-mono truncate">{student.login}</p>
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              {/* Project Selection Section */}
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest">2. Assign Project</label>
+                  <div className="relative">
+                    <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Filter projects..."
+                      className="bg-slate-950 border border-slate-800 rounded-lg pl-7 pr-3 py-1.5 text-[10px] outline-none focus:border-purple-500 transition-all w-[150px]"
+                      value={projectSearch}
+                      onChange={(e) => setProjectSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {projects
+                    .filter(p => p.name.toLowerCase().includes(projectSearch.toLowerCase()))
+                    .map(project => (
+                      <button
+                        key={project.id}
+                        onClick={() => setEnrollForm({...enrollForm, projectId: project.id})}
+                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                          enrollForm.projectId === project.id
+                            ? 'bg-purple-600/20 border-purple-500 shadow-[0_0_15px_rgba(147,51,234,0.2)]'
+                            : 'bg-slate-800/50 border-slate-700 hover:border-slate-500'
+                        }`}
+                      >
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center shadow-md ${enrollForm.projectId === project.id ? 'bg-purple-600/30' : 'bg-slate-900'}`}>
+                          <Briefcase size={18} className={enrollForm.projectId === project.id ? 'text-purple-400' : 'text-slate-600'} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold truncate">{project.name}</p>
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-slate-800">
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowEnrollModal(false)} className="flex-1 py-3 text-slate-400 font-bold hover:text-white transition-colors text-sm uppercase tracking-widest">Cancel</button>
+                <button
+                  onClick={() => enrollOrUpdateStudent(enrollForm.studentId, enrollForm.projectId, true)}
+                  disabled={enrollForm.studentId === 0 || enrollForm.projectId === 0}
+                  className="flex-[2] py-4 bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 rounded-2xl font-black transition-all shadow-lg shadow-emerald-900/20 uppercase tracking-widest"
+                >
+                  Confirm Enrollment
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showProjectUpdateModal && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) closeAllModals(); }}
+        >
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-2xl p-8 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-purple-600/20 rounded-xl flex items-center justify-center border border-purple-500/30">
+                  <Briefcase className="text-purple-400" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold">Update Project</h2>
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">From {currentDate} onwards</p>
+                </div>
+              </div>
+              <button onClick={() => setShowProjectUpdateModal(false)} className="text-slate-500 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="relative mb-6">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Filter projects by name..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-12 pr-4 py-3 outline-none focus:border-purple-500 transition-all"
+                value={projectSearch}
+                onChange={(e) => setProjectSearch(e.target.value)}
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {projects
+                .filter(p => p.name.toLowerCase().includes(projectSearch.toLowerCase()))
+                .map(project => (
+                  <button
+                    key={project.id}
+                    onClick={() => {
+                      if (updatingProjectIdFor) {
+                        enrollOrUpdateStudent(updatingProjectIdFor, project.id, false);
+                        setShowProjectUpdateModal(false);
+                      }
+                    }}
+                    className="flex items-center gap-3 p-4 rounded-xl border border-slate-700 bg-slate-800/50 hover:border-purple-500 hover:bg-purple-600/10 transition-all text-left group"
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-slate-900 flex items-center justify-center group-hover:bg-purple-600/30 transition-all">
+                      <Briefcase size={18} className="text-slate-600 group-hover:text-purple-400" />
+                    </div>
+                    <p className="text-sm font-bold truncate">{project.name}</p>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
