@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Calendar, UserPlus, Users, Briefcase, ChevronRight, Trash2, ChevronLeft, CheckCircle2, Circle, LayoutDashboard, Settings2, UserMinus } from 'lucide-react'
+import { Plus, Calendar, UserPlus, Users, Briefcase, ChevronRight, Trash2, ChevronLeft, CheckCircle2, Circle, LayoutDashboard, Settings2, UserMinus, Palette } from 'lucide-react'
 
 interface Sprint {
   id: number;
@@ -21,6 +21,12 @@ interface Project {
   description?: string;
 }
 
+interface CompletionLevel {
+  id: number;
+  text: string;
+  color: string;
+}
+
 interface DailyData {
   student_id: number;
   name: string;
@@ -31,6 +37,9 @@ interface DailyData {
   objective_id?: number;
   objective?: string;
   is_done?: boolean;
+  completion_level_id?: number;
+  completion_text?: string;
+  completion_color?: string;
 }
 
 type View = 'dashboard' | 'libraries';
@@ -42,6 +51,7 @@ function App() {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [completionLevels, setCompletionLevels] = useState<CompletionLevel[]>([]);
   const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
   const [currentDate, setCurrentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [dailyData, setDailyData] = useState<DailyData[]>([]);
@@ -49,11 +59,13 @@ function App() {
   const [showSprintModal, setShowSprintModal] = useState(false);
   const [showStudentModal, setShowStudentModal] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
+  const [showLevelModal, setShowLevelModal] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
 
   const [sprintForm, setSprintForm] = useState({ name: '', startDate: '', endDate: '' });
   const [studentForm, setStudentForm] = useState({ name: '', login: '', imageUrl: '' });
   const [projectForm, setProjectForm] = useState({ name: '', description: '' });
+  const [levelForm, setLevelForm] = useState({ text: '', color: '#475569' });
   const [enrollForm, setEnrollForm] = useState({ studentId: 0, projectId: 0 });
 
   const formatDate = (date: string | Date) => {
@@ -62,18 +74,21 @@ function App() {
 
   const fetchData = async () => {
     try {
-      const [sprintsRes, studentsRes, projectsRes] = await Promise.all([
+      const [sprintsRes, studentsRes, projectsRes, levelsRes] = await Promise.all([
         fetch(`${API_BASE}/api/sprints`),
         fetch(`${API_BASE}/api/students`),
-        fetch(`${API_BASE}/api/projects`)
+        fetch(`${API_BASE}/api/projects`),
+        fetch(`${API_BASE}/api/completion-levels`)
       ]);
       const sprintsData = await sprintsRes.json();
       const studentsData = await studentsRes.json();
       const projectsData = await projectsRes.json();
+      const levelsData = await levelsRes.json();
 
       setSprints(Array.isArray(sprintsData) ? sprintsData : []);
       setStudents(Array.isArray(studentsData) ? studentsData : []);
       setProjects(Array.isArray(projectsData) ? projectsData : []);
+      setCompletionLevels(Array.isArray(levelsData) ? levelsData : []);
 
       if (!selectedSprint && sprintsData.length > 0) {
         const firstSprint = sprintsData[0];
@@ -157,6 +172,24 @@ function App() {
     }
   };
 
+  const handleCreateLevel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE}/api/completion-levels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(levelForm),
+      });
+      if (!res.ok) throw new Error('Failed to add level');
+      setShowLevelModal(false);
+      setLevelForm({ text: '', color: '#475569' });
+      await fetchData();
+    } catch (err) {
+      alert('Failed to add level.');
+      console.error(err);
+    }
+  };
+
   const enrollOrUpdateStudent = async (studentId: number, projectId: number, isModal = false) => {
     if (!selectedSprint || studentId === 0 || projectId === 0) return;
     try {
@@ -204,12 +237,24 @@ function App() {
     fetchData();
   };
 
-  const updateObjective = async (studentId: number, objective: string, isDone: boolean) => {
+  const handleDeleteLevel = async (id: number) => {
+    if (!confirm('Delete this level?')) return;
+    await fetch(`${API_BASE}/api/completion-levels/${id}`, { method: 'DELETE' });
+    fetchData();
+  };
+
+  const updateObjective = async (studentId: number, objective: string, completionLevelId?: number) => {
     if (!selectedSprint) return;
     await fetch(`${API_BASE}/api/objectives`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId, sprintId: selectedSprint.id, date: currentDate, objective, isDone }),
+      body: JSON.stringify({
+        studentId,
+        sprintId: selectedSprint.id,
+        date: currentDate,
+        objective,
+        completionLevelId
+      }),
     });
     fetchDailyData();
   };
@@ -241,6 +286,7 @@ function App() {
             <>
               <button onClick={() => setShowStudentModal(true)} className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg font-bold text-xs"><Plus size={16} className="inline mr-1"/> STUDENT</button>
               <button onClick={() => setShowProjectModal(true)} className="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-lg font-bold text-xs"><Plus size={16} className="inline mr-1"/> PROJECT</button>
+              <button onClick={() => setShowLevelModal(true)} className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg font-bold text-xs"><Plus size={16} className="inline mr-1"/> LEVEL</button>
             </>
           )}
         </div>
@@ -304,18 +350,29 @@ function App() {
                                 <input
                                   type="text"
                                   placeholder="Set objective..."
-                                  maxLength={20}
-                                  className={`w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-all ${student.is_done ? 'line-through text-slate-500 italic' : ''}`}
+                                  className={`w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-all ${student.completion_color ? '' : ''}`}
+                                  style={student.completion_color && student.completion_text === 'Done' ? { textDecoration: 'line-through', color: '#64748b', fontStyle: 'italic' } : {}}
                                   value={student.objective || ''}
                                   onChange={(e) => setDailyData(dailyData.map(d => d.student_id === student.student_id ? {...d, objective: e.target.value} : d))}
-                                  onBlur={(e) => updateObjective(student.student_id, e.target.value, student.is_done || false)}
+                                  onBlur={(e) => updateObjective(student.student_id, e.target.value, student.completion_level_id)}
                                 />
-                                <div className="text-[9px] text-slate-600 mt-1 ml-2 uppercase font-bold tracking-tighter">
-                                  {student.objective?.length || 0}/20 chars
-                                </div>
                               </div>
-                              <div className="flex gap-2">
-                                <button onClick={() => updateObjective(student.student_id, student.objective || '', !student.is_done)} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${student.is_done ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'}`}>{student.is_done ? <CheckCircle2 size={16}/> : <Circle size={16}/>}{student.is_done ? 'DONE' : 'CHECK'}</button>
+                              <div className="flex items-center gap-2">
+                                <select
+                                  className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border outline-none cursor-pointer`}
+                                  style={{
+                                    backgroundColor: student.completion_color ? `${student.completion_color}1a` : '#1e293b',
+                                    borderColor: student.completion_color ? `${student.completion_color}50` : '#334155',
+                                    color: student.completion_color || '#94a3b8'
+                                  }}
+                                  value={student.completion_level_id || 0}
+                                  onChange={(e) => updateObjective(student.student_id, student.objective || '', parseInt(e.target.value))}
+                                >
+                                  <option value="0" className="bg-slate-900 text-slate-400">Level</option>
+                                  {completionLevels.map(cl => (
+                                    <option key={cl.id} value={cl.id} className="bg-slate-900" style={{ color: cl.color }}>{cl.text}</option>
+                                  ))}
+                                </select>
                                 <button onClick={() => removeFromSprint(student.student_id)} className="p-2.5 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all border border-transparent hover:border-rose-500/20"><UserMinus size={18}/></button>
                               </div>
                             </div>
@@ -327,26 +384,40 @@ function App() {
                 </div>
              </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
+                  <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-blue-400">Student Library</h2>
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                    {students.map(student => (
+                      <div key={student.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-blue-500 transition-all">
+                        <img src={student.image_url} className="w-16 h-16 rounded-2xl object-cover mb-3 border-2 border-slate-800 group-hover:border-blue-500 transition-all" />
+                        <p className="text-sm font-bold truncate w-full">{student.name}</p>
+                        <p className="text-[10px] text-slate-600 font-mono">{student.login}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+                <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
+                  <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-purple-400">Project Library</h2>
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                    {projects.map(project => (
+                      <div key={project.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-purple-500 transition-all">
+                        <div className="w-16 h-16 rounded-2xl bg-slate-900 flex items-center justify-center mb-3 border-2 border-slate-800 group-hover:border-purple-500 transition-all"><Briefcase size={24} className="text-slate-500"/></div>
+                        <p className="text-sm font-bold truncate w-full">{project.name}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
               <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
-                <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-blue-400">Student Library</h2>
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                  {students.map(student => (
-                    <div key={student.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-blue-500 transition-all">
-                      <img src={student.image_url} className="w-16 h-16 rounded-2xl object-cover mb-3 border-2 border-slate-800 group-hover:border-blue-500 transition-all" />
-                      <p className="text-sm font-bold truncate w-full">{student.name}</p>
-                      <p className="text-[10px] text-slate-600 font-mono">{student.login}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-              <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
-                <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-purple-400">Project Library</h2>
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                  {projects.map(project => (
-                    <div key={project.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center group hover:border-purple-500 transition-all">
-                      <div className="w-16 h-16 rounded-2xl bg-slate-900 flex items-center justify-center mb-3 border-2 border-slate-800 group-hover:border-purple-500 transition-all"><Briefcase size={24} className="text-slate-500"/></div>
-                      <p className="text-sm font-bold truncate w-full">{project.name}</p>
+                <h2 className="text-xl font-bold uppercase tracking-widest text-sm mb-8 text-amber-400">Completion Levels</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {completionLevels.map(level => (
+                    <div key={level.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center relative group">
+                      <div className="w-8 h-8 rounded-full mb-3" style={{ backgroundColor: level.color }}></div>
+                      <p className="text-xs font-bold truncate w-full" style={{ color: level.color }}>{level.text}</p>
+                      <button onClick={() => handleDeleteLevel(level.id)} className="absolute top-2 right-2 text-slate-700 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
                     </div>
                   ))}
                 </div>
@@ -362,6 +433,8 @@ function App() {
       {showStudentModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-emerald-400">Add to Library</h2><form onSubmit={handleAddStudent} className="space-y-4"><input type="text" placeholder="Full Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})}/><input type="text" placeholder="Login" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={studentForm.login} onChange={e => setStudentForm({...studentForm, login: e.target.value})}/><input type="url" placeholder="Image URL" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={studentForm.imageUrl} onChange={e => setStudentForm({...studentForm, imageUrl: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowStudentModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-emerald-600 rounded-xl font-bold">Save</button></div></form></div></div>}
 
       {showProjectModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-purple-400">Library Project</h2><form onSubmit={handleCreateProject} className="space-y-4"><input type="text" placeholder="Project Name" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})}/><textarea placeholder="Description (optional)" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 min-h-[100px] outline-none" value={projectForm.description} onChange={e => setProjectForm({...projectForm, description: e.target.value})}/><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowProjectModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-purple-600 rounded-xl font-bold">Save</button></div></form></div></div>}
+
+      {showLevelModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6 text-amber-400">New Completion Level</h2><form onSubmit={handleCreateLevel} className="space-y-4"><input type="text" placeholder="Level Text (max 20 chars)" maxLength={20} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none" value={levelForm.text} onChange={e => setLevelForm({...levelForm, text: e.target.value})}/><div className="flex items-center gap-4 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2"><label className="text-xs font-bold text-slate-500 uppercase">Color</label><input type="color" className="bg-transparent border-none w-10 h-8 cursor-pointer" value={levelForm.color} onChange={e => setLevelForm({...levelForm, color: e.target.value})}/><span className="font-mono text-xs uppercase text-slate-400">{levelForm.color}</span></div><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowLevelModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" className="flex-1 py-3 bg-amber-600 rounded-xl font-bold">Save</button></div></form></div></div>}
 
       {showEnrollModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 shadow-2xl"><h2 className="text-2xl font-bold mb-6">Enroll in {selectedSprint?.name || 'Sprint'}</h2><form onSubmit={(e) => { e.preventDefault(); enrollOrUpdateStudent(enrollForm.studentId, enrollForm.projectId, true); }} className="space-y-6"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Student</label><select required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 appearance-none focus:border-blue-500 outline-none" value={enrollForm.studentId} onChange={e => setEnrollForm({...enrollForm, studentId: parseInt(e.target.value)})}><option value="0">Choose a student...</option>{students.map(s => (<option key={s.id} value={s.id}>{s.name} ({s.login})</option>))}</select></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Assign Project</label><select required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 appearance-none focus:border-blue-500 outline-none" value={enrollForm.projectId} onChange={e => setEnrollForm({...enrollForm, projectId: parseInt(e.target.value)})}><option value="0">Choose a project...</option>{projects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div><div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowEnrollModal(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancel</button><button type="submit" disabled={enrollForm.studentId === 0 || enrollForm.projectId === 0} className="flex-1 py-3 bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 rounded-xl font-bold transition-all">Enroll</button></div></form></div></div>}
     </div>
