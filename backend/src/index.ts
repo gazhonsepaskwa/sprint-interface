@@ -293,7 +293,15 @@ app.get('/api/auth/42/callback', async (req, res) => {
       res.redirect(FRONTEND_URL);
     });
   } catch (err) {
-    console.error('Auth Error:', (err as any).response?.data || (err as Error).message);
+    const errorData = (err as any).response?.data;
+    console.error('[AUTH ERROR] Details:', {
+      message: (err as Error).message,
+      data: errorData,
+      config: {
+        redirect_uri: REDIRECT_URI,
+        client_id: UID ? 'SET' : 'MISSING'
+      }
+    });
     res.redirect(`${FRONTEND_URL}/login?error=auth_failed`);
   }
 });
