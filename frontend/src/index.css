@@ -1,3 +1,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-slate-200 antialiased;
+    background-image: radial-gradient(circle, #3d4766 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+}
+
+.tutor-card {
+  @apply bg-card border border-border rounded-lg shadow-sm p-6;
+}
+
+.tutor-button-primary {
+  @apply bg-primary hover:bg-opacity-90 text-white font-bold py-2 px-4 rounded transition-all flex items-center justify-center gap-2;
+}
+
+.tutor-input {
+  @apply bg-[#1c2333] border border-border rounded px-4 py-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-primary;
+}
