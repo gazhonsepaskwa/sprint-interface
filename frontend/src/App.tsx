@@ -60,9 +60,16 @@ interface User {
   name: string;
   image_url: string;
   is_staff: boolean;
+  is_superuser: boolean;
 }
 
-type View = 'dashboard' | 'libraries';
+interface WhitelistEntry {
+  id: number;
+  login: string;
+  created_at: string;
+}
+
+type View = 'dashboard' | 'libraries' | 'whitelist';
 
 function App() {
   const API_BASE = `http://${window.location.hostname}:5001`;
@@ -74,6 +81,7 @@ function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [completionLevels, setCompletionLevels] = useState<CompletionLevel[]>([]);
+  const [whitelist, setWhitelist] = useState<WhitelistEntry[]>([]);
   const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
   const [currentDate, setCurrentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [dailyData, setDailyData] = useState<DailyData[]>([]);
@@ -101,9 +109,10 @@ function App() {
   const [levelForm, setLevelForm] = useState({ text: '', color: '#475569' });
   const [enrollForm, setEnrollForm] = useState({ studentId: 0, projectId: 0 });
   const [goalForm, setGoalForm] = useState({ studentId: 0, studentName: '', goal: '', isMet: false });
+  const [whitelistForm, setWhitelistForm] = useState({ login: '' });
 
   const apiFetch = async (url: string, options: RequestInit = {}) => {
-    return fetch(url, {
+    const res = await fetch(url, {
       ...options,
       credentials: 'include',
       headers: {
@@ -111,15 +120,24 @@ function App() {
         ...options.headers,
       },
     });
+    if (res.status === 401 && !url.includes('/api/auth/me')) {
+      setUser(null);
+    }
+    return res;
   };
 
   const checkAuth = async () => {
     try {
       const res = await apiFetch(`${API_BASE}/api/auth/me`);
+      if (!res.ok) {
+        setUser(null);
+        return;
+      }
       const userData = await res.json();
       setUser(userData);
     } catch (err) {
       console.error('Auth check failed:', err);
+      setUser(null);
     } finally {
       setLoadingAuth(false);
     }
@@ -166,9 +184,42 @@ function App() {
         setSelectedSprint(firstSprint);
         setCurrentDate(formatDate(firstSprint.start_date));
       }
+
+      // Fetch whitelist if superuser
+      if (user?.is_superuser) {
+        fetchWhitelist();
+      }
     } catch (err) {
       console.error('Fetch error:', err);
     }
+  };
+
+  const fetchWhitelist = async () => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/whitelist`);
+      const data = await res.json();
+      setWhitelist(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const addToWhitelist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await apiFetch(`${API_BASE}/api/whitelist`, {
+      method: 'POST',
+      body: JSON.stringify(whitelistForm),
+    });
+    if (res.ok) {
+      setWhitelistForm({ login: '' });
+      fetchWhitelist();
+    }
+  };
+
+  const removeFromWhitelist = async (id: number) => {
+    if (!confirm('Remove from whitelist?')) return;
+    const res = await apiFetch(`${API_BASE}/api/whitelist/${id}`, { method: 'DELETE' });
+    if (res.ok) fetchWhitelist();
   };
 
   const fetchDailyData = async () => {
@@ -197,6 +248,12 @@ function App() {
     checkAuth();
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (currentView === 'whitelist' && user?.is_superuser) {
+      fetchWhitelist();
+    }
+  }, [currentView, user]);
 
   useEffect(() => {
     if (selectedSprint && currentView === 'dashboard') {
@@ -442,6 +499,9 @@ function App() {
   const isFirstDay = selectedSprint && currentDate <= formatDate(selectedSprint.start_date);
   const isLastDay = selectedSprint && currentDate >= formatDate(selectedSprint.end_date);
 
+  const queryParams = new URLSearchParams(window.location.search);
+  const authError = queryParams.get('error');
+
   const closeAllModals = () => {
     setShowSprintModal(false);
     setShowStudentModal(false);
@@ -477,6 +537,11 @@ function App() {
           <div className="bg-card border border-border p-12 rounded-3xl shadow-2xl max-w-md w-full text-center">
             <h2 className="text-2xl font-bold mb-4">Welcome back</h2>
             <p className="text-slate-400 mb-8">Sign in with your Intra 42 account to manage sprints and track progress.</p>
+            {authError === 'not_whitelisted' && (
+              <div className="bg-rose-500/10 border border-rose-500/50 text-rose-500 p-4 rounded-xl mb-6 text-sm font-bold">
+                Access Denied: Your account is not on the whitelist.
+              </div>
+            )}
             <button
               onClick={handleLogin}
               className="w-full py-4 bg-primary hover:bg-opacity-90 rounded-2xl font-black text-lg transition-all shadow-lg flex items-center justify-center gap-3"
@@ -498,6 +563,9 @@ function App() {
             <div className="flex items-center gap-8">
               <button onClick={() => setCurrentView('dashboard')} className={`text-sm font-medium hover:text-white transition-colors ${currentView === 'dashboard' ? 'text-white' : 'text-slate-400'}`}>Dashboard</button>
               <button onClick={() => setCurrentView('libraries')} className={`text-sm font-medium hover:text-white transition-colors ${currentView === 'libraries' ? 'text-white' : 'text-slate-400'}`}>Libraries</button>
+              {user.is_superuser && (
+                <button onClick={() => setCurrentView('whitelist')} className={`text-sm font-medium hover:text-white transition-colors ${currentView === 'whitelist' ? 'text-white' : 'text-slate-400'}`}>Whitelist</button>
+              )}
               <div className="flex items-center gap-4 ml-4 group relative">
                 <div className="flex items-center gap-3 cursor-pointer" onClick={handleLogout}>
                   <div className="text-right hidden sm:block">
@@ -703,7 +771,7 @@ function App() {
                   </div>
                 )}
              </div>
-          ) : (
+          ) : currentView === 'libraries' ? (
             <div className="space-y-8">
               <div className="max-w-md mx-auto">
                 <div className="relative">
@@ -831,6 +899,56 @@ function App() {
                       </div>
                     ))}
                   </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-2xl mx-auto space-y-8">
+              <div className="tutor-card">
+                <div className="flex items-center gap-3 mb-8">
+                  <CheckCircle2 className="text-primary" size={28} />
+                  <h2 className="text-2xl font-bold uppercase tracking-tight">Access Whitelist</h2>
+                </div>
+                <form onSubmit={addToWhitelist} className="flex gap-4 mb-8">
+                  <input
+                    type="text"
+                    placeholder="Enter Intra login (e.g. nalebrun)"
+                    className="flex-1 tutor-input"
+                    required
+                    value={whitelistForm.login}
+                    onChange={e => setWhitelistForm({ login: e.target.value })}
+                  />
+                  <button type="submit" className="tutor-button-primary whitespace-nowrap px-8">
+                    Whitelist User
+                  </button>
+                </form>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-4">Authorized Logins</label>
+                  {whitelist.map(entry => (
+                    <div key={entry.id} className="bg-[#1c2333] border border-border rounded-xl p-4 flex items-center justify-between group hover:border-primary/50 transition-all">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                          {entry.login[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-bold">{entry.login}</p>
+                          <p className="text-[10px] text-slate-500 font-mono">Added {new Date(entry.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeFromWhitelist(entry.id)}
+                        className="p-2 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  ))}
+                  {whitelist.length === 0 && (
+                    <div className="py-12 text-center text-slate-600 italic">
+                      No users whitelisted yet.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

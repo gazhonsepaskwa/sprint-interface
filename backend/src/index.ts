@@ -21,10 +21,12 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'sprint-secret-key',
   resave: false,
   saveUninitialized: false,
+  name: 'sprint-session', // Removed __Host- prefix for local HTTP development
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    sameSite: 'lax',
+    maxAge: 12 * 60 * 60 * 1000 // 12 hours
   }
 }));
 
@@ -148,7 +150,7 @@ const initDb = async () => {
         END IF;
       END $$;
 
-      -- Migration: Add sprint_goal and is_goal_met to sprint_students
+      -- Migration: Add is_goal_met to sprint_students
       DO $$
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sprint_students' AND column_name='sprint_goal') THEN
@@ -158,8 +160,19 @@ const initDb = async () => {
           ALTER TABLE sprint_students ADD COLUMN is_goal_met BOOLEAN DEFAULT FALSE;
         END IF;
       END $$;
+
+      CREATE TABLE IF NOT EXISTS whitelist (
+        id SERIAL PRIMARY KEY,
+        login TEXT UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
-    console.log('Database tables initialized');
+
+    // Seed Superuser
+    const SUPERUSER = (process.env.SUPERUSER_LOGIN || 'nalebrun').trim().toLowerCase();
+    await pool.query('INSERT INTO whitelist (login) VALUES ($1) ON CONFLICT (login) DO NOTHING', [SUPERUSER]);
+
+    console.log(`Database tables initialized. SUPERUSER seeded: ${SUPERUSER}`);
   } catch (err) {
     console.error('Error initializing database:', err);
   }
@@ -226,6 +239,19 @@ app.get('/api/auth/42/callback', async (req, res) => {
     });
 
     const userData = userRes.data;
+    console.log(`[AUTH] 42 API returned login: "${userData.login}"`);
+
+    // Check Whitelist
+    const whitelistRes = await pool.query('SELECT * FROM whitelist WHERE login = $1', [userData.login]);
+    const SUPERUSER = (process.env.SUPERUSER_LOGIN || 'nalebrun').trim();
+    const isSuperuser = userData.login === SUPERUSER;
+
+    if (whitelistRes.rows.length === 0) {
+      console.log(`[AUTH] Access REJECTED for ${userData.login} (not in whitelist)`);
+      return res.redirect(`${FRONTEND_URL}/login?error=not_whitelisted`);
+    }
+
+    console.log(`[AUTH] Access GRANTED for ${userData.login}`);
 
     // Store user in session
     (req.session as any).user = {
@@ -233,18 +259,58 @@ app.get('/api/auth/42/callback', async (req, res) => {
       login: userData.login,
       name: userData.displayname,
       image_url: userData.image?.versions?.medium || userData.image?.link,
-      is_staff: userData['staff?']
+      is_staff: userData['staff?'],
+      is_superuser: isSuperuser
     };
 
-    res.redirect(FRONTEND_URL);
+    // Explicitly save the session before redirecting
+    req.session.save((err) => {
+      if (err) {
+        console.error('[SESSION] Error saving session:', err);
+        return res.redirect(`${FRONTEND_URL}/login?error=auth_failed`);
+      }
+      res.redirect(FRONTEND_URL);
+    });
   } catch (err) {
     console.error('Auth Error:', (err as any).response?.data || (err as Error).message);
     res.redirect(`${FRONTEND_URL}/login?error=auth_failed`);
   }
 });
 
-app.get('/api/auth/me', (req, res) => {
-  res.json((req.session as any).user || null);
+// Middleware to protect API routes and enforce whitelist
+const requireAuth = async (req: any, res: any, next: any) => {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const login = req.session.user.login;
+  const SUPERUSER = (process.env.SUPERUSER_LOGIN || 'nalebrun').trim();
+
+  try {
+    const whitelistRes = await pool.query('SELECT login FROM whitelist WHERE login = $1', [login]);
+
+    if (whitelistRes.rows.length === 0) {
+      console.log(`[AUTH] Access REVOKED for ${login} (not in whitelist)`);
+      return req.session.destroy(() => {
+        res.status(401).json({ error: 'Access revoked' });
+      });
+    }
+
+    // Attach fresh permissions
+    req.user = {
+      ...req.session.user,
+      is_superuser: login === SUPERUSER
+    };
+
+    next();
+  } catch (err) {
+    console.error('[AUTH] DB Error during verification:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+app.get('/api/auth/me', requireAuth, (req: any, res) => {
+  res.json(req.user);
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -255,8 +321,49 @@ app.post('/api/auth/logout', (req, res) => {
   });
 });
 
+// Whitelist Routes
+app.get('/api/whitelist', requireAuth, async (req: any, res) => {
+  if (!req.user?.is_superuser) return res.status(403).json({ error: 'Superuser access required' });
+
+  try {
+    const result = await pool.query('SELECT id, login, created_at FROM whitelist ORDER BY login ASC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/whitelist', requireAuth, async (req: any, res) => {
+  if (!req.user?.is_superuser) return res.status(403).json({ error: 'Superuser access required' });
+
+  const { login } = req.body;
+  if (!login || typeof login !== 'string') return res.status(400).json({ error: 'Invalid login' });
+
+  try {
+    const result = await pool.query(
+      'INSERT INTO whitelist (login) VALUES ($1) ON CONFLICT (login) DO NOTHING RETURNING id, login, created_at',
+      [login.trim().toLowerCase()]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/whitelist/:id', requireAuth, async (req: any, res) => {
+  if (!req.user?.is_superuser) return res.status(403).json({ error: 'Superuser access required' });
+
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM whitelist WHERE id = $1', [id]);
+    res.json({ message: 'Removed from whitelist' });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // Sprint Routes
-app.post('/api/sprints', async (req, res) => {
+app.post('/api/sprints', requireAuth, async (req, res) => {
   const { name, startDate, endDate } = req.body;
   try {
     const result = await pool.query(
@@ -269,7 +376,7 @@ app.post('/api/sprints', async (req, res) => {
   }
 });
 
-app.get('/api/sprints', async (req, res) => {
+app.get('/api/sprints', requireAuth, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM sprints ORDER BY start_date DESC');
     res.json(result.rows);
@@ -278,7 +385,7 @@ app.get('/api/sprints', async (req, res) => {
   }
 });
 
-app.delete('/api/sprints/:id', async (req, res) => {
+app.delete('/api/sprints/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
     // Delete associated sprint_students and daily_objectives first if not using CASCADE
@@ -294,7 +401,7 @@ app.delete('/api/sprints/:id', async (req, res) => {
 
 // Student Routes
 // Student Routes
-app.post('/api/students/sync-42', async (req, res) => {
+app.post('/api/students/sync-42', requireAuth, async (req, res) => {
   const UID = process.env.FORTYTWO_APP_ID;
   const SECRET = process.env.FORTYTWO_APP_SECRET;
   const CAMPUS_ID = process.env.FORTYTWO_CAMPUS_ID || '52'; // Default to 42 Brussels
@@ -369,7 +476,7 @@ app.post('/api/students/sync-42', async (req, res) => {
   }
 });
 
-app.post('/api/students', async (req, res) => {
+app.post('/api/students', requireAuth, async (req, res) => {
   const { name, login, imageUrl } = req.body;
   try {
     const result = await pool.query(
@@ -382,7 +489,7 @@ app.post('/api/students', async (req, res) => {
   }
 });
 
-app.get('/api/students', async (req, res) => {
+app.get('/api/students', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT s.*,
@@ -407,7 +514,7 @@ app.get('/api/students', async (req, res) => {
   }
 });
 
-app.delete('/api/students', async (req, res) => {
+app.delete('/api/students', requireAuth, async (req, res) => {
   try {
     await pool.query('DELETE FROM daily_objectives');
     await pool.query('DELETE FROM sprint_students');
@@ -418,7 +525,7 @@ app.delete('/api/students', async (req, res) => {
   }
 });
 
-app.delete('/api/students/:id', async (req, res) => {
+app.delete('/api/students/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     // Delete student and all related data
@@ -431,7 +538,7 @@ app.delete('/api/students/:id', async (req, res) => {
   }
 });
 
-app.put('/api/students/:id', async (req, res) => {
+app.put('/api/students/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { name, login, imageUrl } = req.body;
   try {
@@ -446,7 +553,7 @@ app.put('/api/students/:id', async (req, res) => {
 });
 
 // Project Routes
-app.post('/api/projects/sync-42', async (req, res) => {
+app.post('/api/projects/sync-42', requireAuth, async (req, res) => {
   const UID = process.env.FORTYTWO_APP_ID;
   const SECRET = process.env.FORTYTWO_APP_SECRET;
 
@@ -505,7 +612,7 @@ app.post('/api/projects/sync-42', async (req, res) => {
   }
 });
 
-app.post('/api/projects', async (req, res) => {
+app.post('/api/projects', requireAuth, async (req, res) => {
   const { name, description } = req.body;
   try {
     const result = await pool.query(
@@ -518,7 +625,7 @@ app.post('/api/projects', async (req, res) => {
   }
 });
 
-app.get('/api/projects', async (req, res) => {
+app.get('/api/projects', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT p.*,
@@ -543,7 +650,7 @@ app.get('/api/projects', async (req, res) => {
   }
 });
 
-app.delete('/api/projects/:id', async (req, res) => {
+app.delete('/api/projects/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     // Projects in sprint_students or daily_objectives will be set to NULL (based on schema)
@@ -554,7 +661,7 @@ app.delete('/api/projects/:id', async (req, res) => {
   }
 });
 
-app.put('/api/projects/:id', async (req, res) => {
+app.put('/api/projects/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { name, description } = req.body;
   try {
@@ -569,7 +676,7 @@ app.put('/api/projects/:id', async (req, res) => {
 });
 
 // Completion Level Routes
-app.post('/api/completion-levels', async (req, res) => {
+app.post('/api/completion-levels', requireAuth, async (req, res) => {
   const { text, color } = req.body;
   try {
     const result = await pool.query(
@@ -582,7 +689,7 @@ app.post('/api/completion-levels', async (req, res) => {
   }
 });
 
-app.get('/api/completion-levels', async (req, res) => {
+app.get('/api/completion-levels', requireAuth, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM completion_levels ORDER BY id ASC');
     res.json(result.rows);
@@ -591,7 +698,7 @@ app.get('/api/completion-levels', async (req, res) => {
   }
 });
 
-app.delete('/api/completion-levels/:id', async (req, res) => {
+app.delete('/api/completion-levels/:id', requireAuth, async (req, res) => {
   try {
     await pool.query('DELETE FROM completion_levels WHERE id = $1', [req.params.id]);
     res.json({ message: 'Deleted' });
@@ -600,7 +707,7 @@ app.delete('/api/completion-levels/:id', async (req, res) => {
   }
 });
 
-app.put('/api/completion-levels/:id', async (req, res) => {
+app.put('/api/completion-levels/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { text, color } = req.body;
   try {
@@ -615,7 +722,7 @@ app.put('/api/completion-levels/:id', async (req, res) => {
 });
 
 // Enrollment Routes
-app.post('/api/sprints/:sprintId/students', async (req, res) => {
+app.post('/api/sprints/:sprintId/students', requireAuth, async (req, res) => {
   const sprintId = parseInt(req.params.sprintId);
   const { studentId, projectId } = req.body;
   console.log(`[ENROLL] Sprint: ${sprintId}, Student: ${studentId}, Project: ${projectId}`);
@@ -637,7 +744,7 @@ app.post('/api/sprints/:sprintId/students', async (req, res) => {
   }
 });
 
-app.get('/api/sprints/:sprintId/students', async (req, res) => {
+app.get('/api/sprints/:sprintId/students', requireAuth, async (req, res) => {
   const sprintId = parseInt(req.params.sprintId);
   try {
     const result = await pool.query(`
@@ -654,7 +761,7 @@ app.get('/api/sprints/:sprintId/students', async (req, res) => {
   }
 });
 
-app.delete('/api/sprints/:sprintId/students/:studentId', async (req, res) => {
+app.delete('/api/sprints/:sprintId/students/:studentId', requireAuth, async (req, res) => {
   const sprintId = parseInt(req.params.sprintId);
   const studentId = parseInt(req.params.studentId);
   try {
@@ -673,7 +780,7 @@ app.delete('/api/sprints/:sprintId/students/:studentId', async (req, res) => {
 });
 
 // Daily Objective Routes
-app.get('/api/sprints/:sprintId/summary', async (req, res) => {
+app.get('/api/sprints/:sprintId/summary', requireAuth, async (req, res) => {
   const sprintId = parseInt(req.params.sprintId);
   try {
     const result = await pool.query(`
@@ -720,7 +827,7 @@ app.get('/api/sprints/:sprintId/summary', async (req, res) => {
 });
 
 // Update sprint goal
-app.post('/api/sprints/:sprintId/students/:studentId/goal', async (req, res) => {
+app.post('/api/sprints/:sprintId/students/:studentId/goal', requireAuth, async (req, res) => {
   const { sprintId, studentId } = req.params;
   const { goal, isMet } = req.body;
   try {
@@ -734,7 +841,7 @@ app.post('/api/sprints/:sprintId/students/:studentId/goal', async (req, res) => 
   }
 });
 
-app.get('/api/sprints/:sprintId/daily', async (req, res) => {
+app.get('/api/sprints/:sprintId/daily', requireAuth, async (req, res) => {
   const sprintId = parseInt(req.params.sprintId);
   const { date } = req.query;
   try {
@@ -781,7 +888,7 @@ app.get('/api/sprints/:sprintId/daily', async (req, res) => {
   }
 });
 
-app.post('/api/objectives', async (req, res) => {
+app.post('/api/objectives', requireAuth, async (req, res) => {
   const { studentId, sprintId, date, objective, isDone, projectId, completionLevelId } = req.body;
   try {
     const result = await pool.query(`
@@ -802,7 +909,7 @@ app.post('/api/objectives', async (req, res) => {
 });
 
 // Update project for today and all FOLLOWING days
-app.post('/api/sprints/:sprintId/students/:studentId/project', async (req, res) => {
+app.post('/api/sprints/:sprintId/students/:studentId/project', requireAuth, async (req, res) => {
   const sprintId = parseInt(req.params.sprintId);
   const studentId = parseInt(req.params.studentId);
   const { projectId, date } = req.body;
