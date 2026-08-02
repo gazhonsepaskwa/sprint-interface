@@ -86,19 +86,6 @@ const initDb = async () => {
         END IF;
       END $$;
 
-      -- Seed default completion levels safely
-      INSERT INTO completion_levels (text, color)
-      SELECT 'Not Started', '#475569'
-      WHERE NOT EXISTS (SELECT 1 FROM completion_levels WHERE text = 'Not Started');
-
-      INSERT INTO completion_levels (text, color)
-      SELECT 'In Progress', '#3b82f6'
-      WHERE NOT EXISTS (SELECT 1 FROM completion_levels WHERE text = 'In Progress');
-
-      INSERT INTO completion_levels (text, color)
-      SELECT 'Done', '#10b981'
-      WHERE NOT EXISTS (SELECT 1 FROM completion_levels WHERE text = 'Done');
-
       -- Migration: Add project_id to daily_objectives if missing
       DO $$
       BEGIN
@@ -217,6 +204,33 @@ app.get('/api/students', async (req, res) => {
   }
 });
 
+app.delete('/api/students/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Delete student and all related data
+    await pool.query('DELETE FROM daily_objectives WHERE student_id = $1', [id]);
+    await pool.query('DELETE FROM sprint_students WHERE student_id = $1', [id]);
+    await pool.query('DELETE FROM students WHERE id = $1', [id]);
+    res.json({ message: 'Student deleted' });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.put('/api/students/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, login, imageUrl } = req.body;
+  try {
+    const result = await pool.query(
+      'UPDATE students SET name = $1, login = $2, image_url = $3 WHERE id = $4 RETURNING *',
+      [name, login, imageUrl, id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // Project Routes
 app.post('/api/projects', async (req, res) => {
   const { name, description } = req.body;
@@ -235,6 +249,31 @@ app.get('/api/projects', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM projects ORDER BY name ASC');
     res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/projects/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Projects in sprint_students or daily_objectives will be set to NULL (based on schema)
+    await pool.query('DELETE FROM projects WHERE id = $1', [id]);
+    res.json({ message: 'Project deleted' });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.put('/api/projects/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, description } = req.body;
+  try {
+    const result = await pool.query(
+      'UPDATE projects SET name = $1, description = $2 WHERE id = $3 RETURNING *',
+      [name, description, id]
+    );
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -267,6 +306,20 @@ app.delete('/api/completion-levels/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM completion_levels WHERE id = $1', [req.params.id]);
     res.json({ message: 'Deleted' });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.put('/api/completion-levels/:id', async (req, res) => {
+  const { id } = req.params;
+  const { text, color } = req.body;
+  try {
+    const result = await pool.query(
+      'UPDATE completion_levels SET text = $1, color = $2 WHERE id = $3 RETURNING *',
+      [text, color, id]
+    );
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
