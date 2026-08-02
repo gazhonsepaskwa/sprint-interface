@@ -591,12 +591,6 @@ function App() {
                       <RefreshCcw size={14} className={syncingStudents ? 'animate-spin' : ''} />
                       {syncingStudents ? 'SYNCING...' : 'SYNC WITH 42 BELGIUM'}
                     </button>
-                    <button
-                      onClick={handleDropAllStudents}
-                      className="bg-rose-600/10 text-rose-500 border border-rose-600/30 hover:bg-rose-600/20 px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2"
-                    >
-                      <Trash2 size={14} /> DROP ALL
-                    </button>
                     <button onClick={() => { setEditingId(null); setStudentForm({name:'', login:'', imageUrl:''}); setShowStudentModal(true); }} className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2">
                       <Plus size={16} /> ADD NEW
                     </button>
