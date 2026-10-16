@@ -5,6 +5,7 @@ Disclamer : Not affiliated with 42, just using the API available to students
 <img width="2056" height="705" alt="image" src="https://github.com/user-attachments/assets/58404ab4-094a-4ec1-abc3-9ced51b98e76" />
 <img width="685" height="409" alt="image" src="https://github.com/user-attachments/assets/1d6aab96-12cd-4c43-868d-437fceb19536" />
 
+note : will be rewriten in go and htmx one day
 env : see backend/.env.exemple
 run in docker via the makefile (make help for the rules)
 
